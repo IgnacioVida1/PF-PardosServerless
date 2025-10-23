@@ -1,13 +1,13 @@
 # PF-PardosServerless
 
 Requerimientos:
-• El cliente coloca un pedido de comida desde una aplicación web de clientes, donde también puede ver el estado de atención de su pedido.
-• Flujo de Trabajo (Workflow) atendido desde una aplicación web para el restaurante:
-  • El restaurante recibe el pedido de comida y lo atiende en orden de llegada.
-  • Un cocinero toma un pedido de comida y cocina o prepara la comida.
-  • Un despachador coloca la comida preparada en envases y lo empaca.
-  • Un repartidor toma la comida empacada y la lleva al cliente. • El cliente recibe la comida empacada.
-• Conocer en todo momento, en la aplicación web para el restaurante, cual es el estado del Flujo de Trabajo de cada pedido de comida, los tiempos de inicio y fin de cada paso y quienes lo atendieron. También elaborar un dashboard resumen. 
+El cliente coloca un pedido de comida desde una aplicación web de clientes, donde también puede ver el estado de atención de su pedido.
+Flujo de Trabajo (Workflow) atendido desde una aplicación web para el restaurante:
+  - El restaurante recibe el pedido de comida y lo atiende en orden de llegada.
+  - Un cocinero toma un pedido de comida y cocina o prepara la comida.
+  - Un despachador coloca la comida preparada en envases y lo empaca.
+  - Un repartidor toma la comida empacada y la lleva al cliente. • El cliente recibe la comida empacada.
+Conocer en todo momento, en la aplicación web para el restaurante, cual es el estado del Flujo de Trabajo de cada pedido de comida, los tiempos de inicio y fin de cada paso y quienes lo atendieron. También elaborar un dashboard resumen. 
 
 Consideraciones para la solución:
   • Utilice Arquitectura Multi-tenancy, serverless y basada en eventos. Incluya como mínimo 3 microservicios. Implemente un Flujo de Trabajo. Utilice framework serverless para despliegue del backend.
