@@ -1,4 +1,6 @@
-# PF-PardosServerless
+## PF-PardosServerless
+
+# Enunciado del trabajo
 
 Requerimientos:
 El cliente coloca un pedido de comida desde una aplicación web de clientes, donde también puede ver el estado de atención de su pedido.
@@ -10,16 +12,35 @@ Flujo de Trabajo (Workflow) atendido desde una aplicación web para el restauran
 Conocer en todo momento, en la aplicación web para el restaurante, cual es el estado del Flujo de Trabajo de cada pedido de comida, los tiempos de inicio y fin de cada paso y quienes lo atendieron. También elaborar un dashboard resumen. 
 
 Consideraciones para la solución:
-  • Utilice Arquitectura Multi-tenancy, serverless y basada en eventos. Incluya como mínimo 3 microservicios. Implemente un Flujo de Trabajo. Utilice framework serverless para despliegue del backend.
-  • Debe utilizar obligatoriamente como mínimo estos servicios de AWS: Amplify, Api Gateway, EventBridge (*), Step Functions (*), Lambda, DynamoDB y S3. (*): Investigue cómo se usan.
+  - Utilice Arquitectura Multi-tenancy, serverless y basada en eventos. Incluya como mínimo 3 microservicios. Implemente un Flujo de Trabajo. Utilice framework serverless para despliegue del backend.
+  - Debe utilizar obligatoriamente como mínimo estos servicios de AWS: Amplify, Api Gateway, EventBridge (*), Step Functions (*), Lambda, DynamoDB y S3. (*): Investigue cómo se usan.
 
-Backend clientes: 
-  - Microservicio de ordenes: crear pedidos y registrar en DynamoDB
-  - Microservicio de estados: mantener actualizado el estado de los pedidos para el cliente
-  - Microservicio de notificacion: enviar notificaciones al cliente (email, push o in-app) cuando cambie el estado de su pedido.
-Backend restaurante:
-  - Microservicio orquestador: coordinar el ciclo de vida del pedido
-  - Microservicio etapas: actualizar el estado o ciclo de vida del pedido mediante los eventos q se usen
-  - Microservicio Dashboard: generar métricas y resumen visual para el restaurante Recordar que ambos usaran estructuras multitenancy con dynamoDB.
-Frontend Clientes: Igualito al de esta pagina https://www.pardoschicken.pe/
-Frontend Restaurante: algo asi como el frontend de nuestro anterior trabajo, pero un poco mas entrado en la tematica de pardos
+# Solucion
+
+1. Tecnologias y Descripcion
+2. Microservicios
+  a. Auth MS (Ignacio): Se encarga del registro y autenticacion de los usuarios con python y JWT
+     Endpoints clave:
+     1) POST /register
+     2) POST /login
+     3) GET /validate
+
+     Tabla DynamoDB:
+     | Campo | Descripcion |
+     |-------|-------------|
+     | PK | TENANT#pardos#USER#<username |
+     | username | nombre de usuario |
+     | passwordHash | contraseña cifrada mediante una funcion Hash |
+     | customerId | referencia a la tabla de clientes |
+     | createdAt | Fecha de creacion |
+
+     Ejemplo JSON:
+     {
+         "PK": "TENANT#pardos#USER#ignacio",
+         "username": "ignacio",
+         "passwordHash": "$2b$12$AbCdEf...",
+         "role": "CLIENTE",
+         "customerId": "c999",
+         "createdAt": "2025-10-30T18:00:00Z"
+     }
+  b. 
