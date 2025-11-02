@@ -42,4 +42,13 @@ Consideraciones para la solución:
          "customerId": "c999",
          "createdAt": "2025-10-30T18:00:00Z"
      }
-  b. 
+   
+  b. Cliente MS (Amir): Maneja el perfil del cliente y creacion de pedidos, ademas de encargarse de publicar eventos en el bus:
+     Endpoints clave:
+     1) POST /orders
+     2) GET /orders/{customerId}
+     3) GET /customers/{customerId}
+     
+     Tabla DynamoDB:
+     
+       
