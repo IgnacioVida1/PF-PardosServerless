@@ -39,7 +39,6 @@ Consideraciones para la solución:
          "PK": "TENANT#pardos#USER#ignacio",
          "username": "ignacio",
          "passwordHash": "$2b$12$AbCdEf...",
-         "role": "CLIENTE",
          "customerId": "c999",
          "createdAt": "2025-10-30T18:00:00Z"
      }
