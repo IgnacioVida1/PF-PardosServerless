@@ -29,18 +29,18 @@ Tecnologias:
     7) DynamoDB
     8) S3
 3. Eventos
-    Pedidos:
+    a. Pedidos:
     1) OrderCreated
     2) OrderCancelled
-    Etapas:
+    b. Etapas:
     1) OrderStageStarted
     2) OrderStageCompleted
     3) OrderStageUpdated
     4) OrderDelivered
-    Cliente:
+    c. Cliente:
     1) CustomerRegistered
     2) CustomerLoggedIn (?)
-    Otros:
+    d. Otros:
     1) NotificationSent
     2) DashboardUpdated (?)
 4. Microservicios
