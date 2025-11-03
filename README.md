@@ -29,21 +29,21 @@ Tecnologias:
     7) DynamoDB
     8) S3
 3. Eventos:
-    a. Pedidos:
-    1) OrderCreated
-    2) OrderCancelled
-    b. Etapas:
-    1) OrderStageStarted
-    2) OrderStageCompleted
-    3) OrderStageUpdated
-    4) OrderDelivered
-    c. Cliente:
-    1) CustomerRegistered
-    2) CustomerLoggedIn (?)
-    d. Otros:
-    1) NotificationSent
-    2) DashboardUpdated (?)
-4. Microservicios
+   a. Pedidos:
+       1) OrderCreated
+       2) OrderCancelled
+   b. Etapas:
+       1) OrderStageStarted
+       2) OrderStageCompleted
+       3) OrderStageUpdated
+       4) OrderDelivered
+   c. Cliente:
+       1) CustomerRegistered
+       2) CustomerLoggedIn (?)
+   d. Otros:
+       1) NotificationSent
+       2) DashboardUpdated (?)
+5. Microservicios
   a. Auth MS (Ignacio): Se encarga del registro y autenticacion de los usuarios con python y JWT
      Endpoints clave:
      1) POST /register
