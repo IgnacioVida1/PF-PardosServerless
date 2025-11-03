@@ -28,7 +28,22 @@ Tecnologias:
     6) Lambda
     7) DynamoDB
     8) S3
-3. Microservicios
+3. Eventos
+    Pedidos:
+    1.- OrderCreated
+    2.- OrderCancelled
+    Etapas:
+    1.- OrderStageStarted
+    2.- OrderStageCompleted
+    3.- OrderStageUpdated
+    4.- OrderDelivered
+    Cliente:
+    1.- CustomerRegistered
+    2.- CustomerLoggedIn (?)
+    Otros:
+    1.- NotificationSent
+    2.- DashboardUpdated (?)
+4. Microservicios
   a. Auth MS (Ignacio): Se encarga del registro y autenticacion de los usuarios con python y JWT
      Endpoints clave:
      1) POST /register
@@ -95,10 +110,18 @@ Tabla DynamoDB:
 	 | total | Monto del pedido | float |
 	 | currentStep | Paso en el que se encuentra el pedido | string |
 	 | createdAt | Fecha de creacion | timestamp |
+     
+     Subentidad:
+     Items del pedido:
+     | Campo | Descripcion | Tipo |
+     |----------|---------------|-------|
+     | productId | Id del producto | string |
+     | qty | cantidad de este item | int |
+     | price | precio del item | float |
 
      Ejemplo JSON:
      {
-       "PK": "TENANT#pardos#ORDER#o12345",
+       "PK": "TENANT#pardos#ORDER#o1",
        "SK": "METADATA",
        "customerId": "c1",
        "status": "CREATED",
@@ -125,8 +148,18 @@ StepsTable:
 | SK | STEP#<stepName<#<timeStamp< | string |
 | stepName | COOKING / PACKAGING / DELIVERY | string |
 | status | IN_PROGRESS / DONE | string |
-| startedAt | Tiempo de inicio del pedido | string |
-| finishedAt | Tiempo final del pedido | string |
+| startedAt | Tiempo de inicio del pedido | timestamp |
+| finishedAt | Tiempo final del pedido | timestamp |
+
+Ejemplo JSON:
+{
+  "PK": "TENANT#pardos#ORDER#o1",
+  "SK": "STEP#COOKING#20251025T160500Z",
+  "stepName": "COOKING",
+  "status": "DONE",
+  "startedAt": "2025-10-25T16:05:00Z",
+  "finishedAt": "2025-10-25T16:15:00Z",
+}
 
    e. Dashboard MS (Ignacio): Genera metricas y reportes para el restaurante.
    Endpoints clave:
@@ -143,7 +176,10 @@ StepsTable:
     4) Por cada etapa del pedido que se cumple, se actualiza su estado en las respectivas tablas.
     5) Se envian las notificaciones al cliente de cada etapa relevante del pedido.
     6) Se agregan las metricas al dashboard.
-4. Frontend
+5. Frontend
 Se realizaran 2 frontends, uno para el cliente y otro para el restaurante.
     1) Frontend Cliente (Julio): Este frontend debe ser igual a la pagina de Pardos Chicken (https://www.pardoschicken.pe/). Debe contar con una seccion para crear cuentas, una pestaña de la carta, una pestaña de promociones, y una pestaña de catering. En la parte de promociones no es necesario tener todas, con unas 2 o 3 bastan. Tambien debe tener una seccion de pedido, donde se veran las promos o productos de carta que se hayan agregado al carrito. Toda la logica de pago podemos saltarla, como poniendo una pequeña pagina intermedia entre la toma del pedido y la confirmacion del pago que diga algo como "Pedido siendo pagado", con fin de hacer la simulacion.Tambien debe haber una seccion de cuenta, donde el cliente podra cambiar sus datos de cuenta o revisarlos.
     2) Frontend Restaurante (Yuri): Este frontend es mas simple, debe contar con 2 pestañas principales, cualquier adicion se queda a criterio del encargado. La primera pestaña contenera un dashboard, dando info general sobre todos los pedidos mediante graficos y cosas asi, esta pestaña consumira el microservicio de Dashboard, el cual generara la mayoria de las metricas, la cosa es mas que nada como se muestra, preferiblemente en formato de graficos y tablas, obviamente que cuente con paginacion para que no explote la pagina. La segunda pestaña sera la pestaña de pedidos, ahi estaran todos los pedidos, con paginacion tambien. Aqui se podra cambiar el estado de cada pedido, marcandolo en cada etapa segun avance su preparacion. Los pedidos deben ordenarse en orden de llegada, osea que se ordenaran teniendo en cuenta cual lleva mas tiempo existiendo. En cada pedido, que aparecera en la pestaña de forma reducida, solo mostrando lo que contiene el pedido, debera poderse clickear para expandirlo y poder ver todos los detalles del pedido, desde los productos que contiene, hasta su costo, tiempos que se llevan manejando, estado actual, etc. En esta forma expandida tambien debera poder editarse el estado del pedido.
+
+
+(Nota: Todos los MS que Ignacio esta trabajando son opcionales, sin contar el MS de autentiacion. Los ira trabajando por ahi, pero no seran necesarios para el trabajo final, es por amor al arte.)
