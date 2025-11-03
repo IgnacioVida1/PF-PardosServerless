@@ -30,19 +30,19 @@ Tecnologias:
     8) S3
 3. Eventos
     Pedidos:
-    1.- OrderCreated
-    2.- OrderCancelled
+    1) OrderCreated
+    2) OrderCancelled
     Etapas:
-    1.- OrderStageStarted
-    2.- OrderStageCompleted
-    3.- OrderStageUpdated
-    4.- OrderDelivered
+    1) OrderStageStarted
+    2) OrderStageCompleted
+    3) OrderStageUpdated
+    4) OrderDelivered
     Cliente:
-    1.- CustomerRegistered
-    2.- CustomerLoggedIn (?)
+    1) CustomerRegistered
+    2) CustomerLoggedIn (?)
     Otros:
-    1.- NotificationSent
-    2.- DashboardUpdated (?)
+    1) NotificationSent
+    2) DashboardUpdated (?)
 4. Microservicios
   a. Auth MS (Ignacio): Se encarga del registro y autenticacion de los usuarios con python y JWT
      Endpoints clave:
