@@ -28,7 +28,7 @@ Tecnologias:
     6) Lambda
     7) DynamoDB
     8) S3
-3. Eventos
+3. Eventos:
     a. Pedidos:
     1) OrderCreated
     2) OrderCancelled
