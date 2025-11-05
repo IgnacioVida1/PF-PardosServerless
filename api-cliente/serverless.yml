@@ -1,0 +1,74 @@
+org: amirykehara #-> Your Serverless Framework Org
+service: cliente-ms
+
+provider:
+  name: aws
+  runtime: python3.13
+  region: us-east-1
+  memorySize: 256
+  timeout: 15
+  iam:
+    role: arn:aws:iam::773506457076:role/LabRole #-> Your IAM Role ARN
+
+  environment:
+    CUSTOMERS_TABLE: CustomersTable
+    ORDERS_TABLE: OrdersTable
+
+functions:
+  createOrder:
+    handler: handler.create_order
+    events:
+      - httpApi:
+          path: /orders
+          method: post
+
+  getOrdersByCustomer:
+    handler: handler.get_orders_by_customer
+    events:
+      - httpApi:
+          path: /orders/{customerId}
+          method: get
+
+  createCustomer:
+    handler: handler.create_customer
+    events:
+      - httpApi:
+          path: /customers
+          method: post
+
+  getCustomer:
+    handler: handler.get_customer
+    events:
+      - httpApi:
+          path: /customers/{customerId}
+          method: get
+
+resources:
+  Resources:
+    CustomersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: CustomersTable
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    OrdersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: OrdersTable
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
