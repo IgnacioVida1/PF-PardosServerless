@@ -1,0 +1,28 @@
+{
+  "name": "pardos-restaurante",
+  "version": "1.0.0",
+  "description": "Backend serverless para restaurante Pardos Chicken - Con Step Functions",
+  "main": "handler.py",
+  "scripts": {
+    "deploy": "serverless deploy",
+    "deploy:dev": "serverless deploy --stage dev",
+    "deploy:prod": "serverless deploy --stage prod",
+    "remove": "serverless remove",
+    "logs": "serverless logs -t",
+    "test": "python -m pytest tests/ -v",
+    "info": "serverless info"
+  },
+  "keywords": [
+    "serverless",
+    "aws",
+    "python",
+    "pardos",
+    "step-functions",
+    "eventbridge"
+  ],
+  "author": "Gabriel Frisancho",
+  "license": "MIT",
+  "devDependencies": {
+    "serverless": "^4.23.0"
+  }
+}
