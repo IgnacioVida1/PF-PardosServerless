@@ -1,0 +1,148 @@
+openapi: 3.0.3
+info:
+  title: Pardos Chicken - API Pedidos
+  description: Microservicio serverless con Step Functions, EventBridge y DynamoDB
+  version: 1.0.0
+  contact:
+    name: Amir Ykehara
+    email: amir.ykehara@utec.edu.pe
+
+servers:
+  - url: https://2wmcf9zj7e.execute-api.us-east-1.amazonaws.com
+    description: Desarrollo (AWS Serverless)
+
+paths:
+  /customers:
+    post:
+      summary: Crear cliente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - customerId
+                - name
+                - email
+              properties:
+                customerId:
+                  type: string
+                  example: c100
+                name:
+                  type: string
+                  example: Ana López
+                email:
+                  type: string
+                  example: ana@utec.edu.pe
+      responses:
+        '201':
+          description: Cliente creado exitosamente
+          content:
+            application/json:
+              example:
+                message: "Customer created"
+                customerId: "c100"
+
+  /customers/{customerId}:
+    get:
+      summary: Obtener cliente por ID
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cliente encontrado
+        '404':
+          description: Cliente no encontrado
+
+  /orders:
+    post:
+      summary: Crear pedido (dispara flujo automático)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - customerId
+                - items
+                - total
+              properties:
+                customerId:
+                  type: string
+                  example: c100
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      productId:
+                        type: string
+                        example: pollo_1_4
+                      qty:
+                        type: integer
+                        example: 1
+                      price:
+                        type: number
+                        example: 25.9
+                total:
+                  type: number
+                  example: 34.4
+      responses:
+        '201':
+          description: Pedido creado
+          content:
+            application/json:
+              example:
+                message: "Order created"
+                orderId: "o1738795678"
+
+  /orders/{customerId}:
+    get:
+      summary: Listar todos los pedidos de un cliente
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de pedidos
+        '404':
+          description: No hay pedidos
+
+  /order/{orderId}:
+    get:
+      summary: Ver detalle completo de un pedido (con progreso)
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: o1738795678
+      responses:
+        '200':
+          description: Detalle del pedido
+          content:
+            application/json:
+              example:
+                orderId: "o1738795678"
+                status: "COMPLETED"
+                currentStep: "DELIVERED"
+                total: 34.4
+                customer:
+                  name: "Ana López"
+                steps:
+                  - "COOKING"
+                  - "PACKAGING"
+                  - "DELIVERY"
+                  - "DELIVERED"
+        '404':
+          description: Pedido no encontrado
