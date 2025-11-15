@@ -1,6 +1,13 @@
 org: gabrielfrisancho
 service: pardos-restaurante
 
+plugins:
+  - serverless-python-requirements
+
+custom:
+  pythonRequirements:
+    dockerizePip: true
+
 provider:
   name: aws
   runtime: python3.13
