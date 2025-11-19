@@ -66,3 +66,25 @@ class DynamoDB:
             'Items': items,
             'Count': response.get('Count', 0)
         }
+    
+    def scan(self, table_name, filter_expression=None, expression_values=None):
+        """Nuevo método SCAN para consultar toda la tabla"""
+        params = {
+            'TableName': os.environ[f"{table_name.upper()}_TABLE"]
+        }
+        
+        if filter_expression and expression_values:
+            serialized_values = {k: self.serializer.serialize(v) for k, v in expression_values.items()}
+            params['FilterExpression'] = filter_expression
+            params['ExpressionAttributeValues'] = serialized_values
+        
+        response = self.client.scan(**params)
+        
+        # Deserializar items
+        items = [ {k: self.deserializer.deserialize(v) for k, v in item.items()} for item in response.get('Items', []) ]
+        
+        return {
+            'Items': items,
+            'Count': response.get('Count', 0),
+            'ScannedCount': response.get('ScannedCount', 0)
+        }
