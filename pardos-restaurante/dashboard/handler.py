@@ -409,4 +409,3 @@ def obtener_cantidad_pedidos(tenant_id):
     """Función auxiliar para obtener cantidad de pedidos"""
     return obtener_total_pedidos(tenant_id)
 
-# NECESITAMOS AGREGAR EL MÉTODO SCAN A LA CLASE DynamoDB
