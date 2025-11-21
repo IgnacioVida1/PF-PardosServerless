@@ -1,15 +1,36 @@
 import json
-from datetime import datetime, timedelta
+import boto3
+import uuid
+import os
+from datetime import datetime
+from decimal import Decimal
+from boto3.dynamodb.conditions import Key
 from shared.database import DynamoDB
+from shared.events import EventBridge
 
-dynamodb = DynamoDB()
+# Inicialización lazy: No crear globales en import time
+dynamodb = None
+events = None
 
+def _get_dynamodb():
+    global dynamodb
+    if dynamodb is None:
+        dynamodb = DynamoDB()
+    return dynamodb
+
+def _get_events():
+    global events
+    if events is None:
+        events = EventBridge()
+    return events
+
+# === FUNCIONES DE DASHBOARD (DATOS REALES) ===
 def obtener_resumen(event, context):
     """
     Obtiene resumen general para el dashboard - DATOS REALES
     """
     try:
-        tenant_id = event.get('queryStringParameters', {}).get('tenantId', 'pardos')
+        tenant_id = 'pardos'  # Por defecto
         
         # Obtener métricas REALES desde DynamoDB
         total_pedidos = obtener_total_pedidos(tenant_id)
@@ -27,7 +48,7 @@ def obtener_resumen(event, context):
         
         return {
             'statusCode': 200,
-            'body': json.dumps(resumen)
+            'body': json.dumps(resumen, default=str)
         }
         
     except Exception as e:
@@ -41,7 +62,7 @@ def obtener_metricas(event, context):
     Obtiene métricas detalladas para gráficos - DATOS REALES
     """
     try:
-        tenant_id = event.get('queryStringParameters', {}).get('tenantId', 'pardos')
+        tenant_id = 'pardos'
         
         metricas = {
             'pedidosPorEstado': obtener_pedidos_por_estado_real(tenant_id),
@@ -52,7 +73,7 @@ def obtener_metricas(event, context):
         
         return {
             'statusCode': 200,
-            'body': json.dumps(metricas)
+            'body': json.dumps(metricas, default=str)
         }
         
     except Exception as e:
@@ -66,10 +87,10 @@ def obtener_pedidos(event, context):
     Obtiene lista de pedidos REALES para el dashboard - DATOS REALES
     """
     try:
-        tenant_id = event.get('queryStringParameters', {}).get('tenantId', 'pardos')
-        limit = int(event.get('queryStringParameters', {}).get('limit', 50))
+        tenant_id = 'pardos'
+        limit = 50
         
-        # Obtener pedidos REALES desde las tablas
+        # Obtener pedidos REALES desde la tabla de orders
         pedidos_reales = obtener_pedidos_reales(tenant_id, limit)
         
         return {
@@ -78,7 +99,7 @@ def obtener_pedidos(event, context):
                 'pedidos': pedidos_reales,
                 'total': len(pedidos_reales),
                 'message': 'Datos reales desde DynamoDB'
-            })
+            }, default=str)
         }
         
     except Exception as e:
@@ -87,15 +108,15 @@ def obtener_pedidos(event, context):
             'body': json.dumps({'error': str(e)})
         }
 
-# FUNCIONES AUXILIARES - DATOS REALES
+# === FUNCIONES AUXILIARES PARA DASHBOARD (DATOS REALES) ===
 
 def obtener_total_pedidos(tenant_id):
-    """Obtiene el total de pedidos REALES desde orders table"""
+    """Obtiene el total de pedidos REALES"""
     try:
-        response = dynamodb.scan(
-            table_name='orders',
+        response = _get_dynamodb().scan(
+            table_name=os.environ['ORDERS_TABLE'],
             filter_expression='begins_with(PK, :pk) AND SK = :sk',
-            expression_values={
+            expression_attribute_values={
                 ':pk': f"TENANT#{tenant_id}#ORDER#",
                 ':sk': 'INFO'
             }
@@ -109,10 +130,10 @@ def obtener_pedidos_hoy(tenant_id):
     """Obtiene pedidos creados hoy - REALES"""
     try:
         hoy = datetime.utcnow().date().isoformat()
-        response = dynamodb.scan(
-            table_name='orders',
+        response = _get_dynamodb().scan(
+            table_name=os.environ['ORDERS_TABLE'],
             filter_expression='begins_with(PK, :pk) AND SK = :sk',
-            expression_values={
+            expression_attribute_values={
                 ':pk': f"TENANT#{tenant_id}#ORDER#",
                 ':sk': 'INFO'
             }
@@ -131,10 +152,10 @@ def obtener_pedidos_hoy(tenant_id):
 def obtener_pedidos_activos(tenant_id):
     """Obtiene pedidos activos REALES"""
     try:
-        response = dynamodb.scan(
-            table_name='orders',
+        response = _get_dynamodb().scan(
+            table_name=os.environ['ORDERS_TABLE'],
             filter_expression='begins_with(PK, :pk) AND SK = :sk',
-            expression_values={
+            expression_attribute_values={
                 ':pk': f"TENANT#{tenant_id}#ORDER#",
                 ':sk': 'INFO'
             }
@@ -154,10 +175,10 @@ def obtener_pedidos_activos(tenant_id):
 def obtener_pedidos_por_estado_real(tenant_id):
     """Obtiene distribución REAL de pedidos por estado"""
     try:
-        response = dynamodb.scan(
-            table_name='orders',
+        response = _get_dynamodb().scan(
+            table_name=os.environ['ORDERS_TABLE'],
             filter_expression='begins_with(PK, :pk) AND SK = :sk',
-            expression_values={
+            expression_attribute_values={
                 ':pk': f"TENANT#{tenant_id}#ORDER#",
                 ':sk': 'INFO'
             }
@@ -176,10 +197,10 @@ def obtener_pedidos_por_estado_real(tenant_id):
 def obtener_tiempos_por_etapa_real(tenant_id):
     """Calcula tiempos REALES por etapa"""
     try:
-        response = dynamodb.scan(
-            table_name='steps',
+        response = _get_dynamodb().scan(
+            table_name=os.environ['STEPS_TABLE'],
             filter_expression='begins_with(PK, :pk) AND attribute_exists(finishedAt)',
-            expression_values={
+            expression_attribute_values={
                 ':pk': f"TENANT#{tenant_id}#ORDER#"
             }
         )
@@ -218,10 +239,10 @@ def obtener_pedidos_ultima_semana_real(tenant_id):
         hoy = datetime.utcnow()
         pedidos_por_dia = [0] * 7  # Últimos 7 días
         
-        response = dynamodb.scan(
-            table_name='orders',
+        response = _get_dynamodb().scan(
+            table_name=os.environ['ORDERS_TABLE'],
             filter_expression='begins_with(PK, :pk) AND SK = :sk',
-            expression_values={
+            expression_attribute_values={
                 ':pk': f"TENANT#{tenant_id}#ORDER#",
                 ':sk': 'INFO'
             }
@@ -258,10 +279,10 @@ def obtener_pedidos_ultima_semana_real(tenant_id):
 def obtener_productos_populares_real(tenant_id):
     """Obtiene productos populares REALES"""
     try:
-        response = dynamodb.scan(
-            table_name='orders',
+        response = _get_dynamodb().scan(
+            table_name=os.environ['ORDERS_TABLE'],
             filter_expression='begins_with(PK, :pk) AND SK = :sk',
-            expression_values={
+            expression_attribute_values={
                 ':pk': f"TENANT#{tenant_id}#ORDER#",
                 ':sk': 'INFO'
             }
@@ -311,10 +332,10 @@ def obtener_nombre_producto(product_id):
 def obtener_tiempo_promedio_real(tenant_id):
     """Calcula tiempo promedio REAL de entrega"""
     try:
-        response = dynamodb.scan(
-            table_name='steps',
+        response = _get_dynamodb().scan(
+            table_name=os.environ['STEPS_TABLE'],
             filter_expression='begins_with(PK, :pk) AND stepName = :step AND attribute_exists(finishedAt)',
-            expression_values={
+            expression_attribute_values={
                 ':pk': f"TENANT#{tenant_id}#ORDER#",
                 ':step': 'DELIVERED'
             }
@@ -338,10 +359,10 @@ def obtener_pedidos_reales(tenant_id, limit=50):
     """Obtiene lista REAL de pedidos con sus datos REALES"""
     try:
         # Obtener todos los pedidos de la tabla ORDERS
-        response = dynamodb.scan(
-            table_name='orders',
+        response = _get_dynamodb().scan(
+            table_name=os.environ['ORDERS_TABLE'],
             filter_expression='begins_with(PK, :pk) AND SK = :sk',
-            expression_values={
+            expression_attribute_values={
                 ':pk': f"TENANT#{tenant_id}#ORDER#",
                 ':sk': 'INFO'
             }
@@ -355,8 +376,8 @@ def obtener_pedidos_reales(tenant_id, limit=50):
             order_id = pedido.get('orderId')
             
             # Obtener etapas del pedido
-            etapas_response = dynamodb.query(
-                table_name='steps',
+            etapas_response = _get_dynamodb().query(
+                table_name=os.environ['STEPS_TABLE'],
                 key_condition_expression='PK = :pk',
                 expression_attribute_values={
                     ':pk': f"TENANT#{tenant_id}#ORDER#{order_id}"
@@ -371,7 +392,7 @@ def obtener_pedidos_reales(tenant_id, limit=50):
                 'status': pedido.get('status', 'CREATED'),
                 'createdAt': pedido.get('createdAt', ''),
                 'etapas': [],
-                'items': convertir_items_formato_dashboard(pedido.get('items', [])),  # ITEMS REALES convertidos
+                'items': pedido.get('items', []),  # ITEMS REALES del pedido
                 'total': float(pedido.get('total', 0))  # TOTAL REAL del pedido
             }
             
@@ -399,26 +420,6 @@ def obtener_pedidos_reales(tenant_id, limit=50):
         print(f"Error obteniendo pedidos reales: {str(e)}")
         return []
 
-def convertir_items_formato_dashboard(items_originales):
-    """Convierte items del formato POST orders al formato del dashboard"""
-    items_convertidos = []
-    
-    for item in items_originales:
-        # Formato original: {"productId": "pollo_1_4", "qty": 1, "price": 25.9}
-        # Formato dashboard: {"name": "Pollo a la Brasa (1/4)", "price": 25.9, "quantity": 1}
-        
-        product_id = item.get('productId', '')
-        nombre = obtener_nombre_producto(product_id)
-        
-        item_convertido = {
-            'name': nombre,
-            'price': float(item.get('price', 0)),
-            'quantity': int(item.get('qty', 1))
-        }
-        items_convertidos.append(item_convertido)
-    
-    return items_convertidos
-
 def calcular_duracion_minutos(inicio, fin):
     """Calcula duración en minutos entre dos timestamps"""
     start = datetime.fromisoformat(inicio.replace('Z', '+00:00'))
@@ -429,8 +430,8 @@ def calcular_tiempo_total_pedido(tenant_id, order_id):
     """Calcula tiempo total de un pedido desde creación hasta entrega"""
     try:
         # Obtener pedido
-        pedido_response = dynamodb.get_item(
-            table_name='orders',
+        pedido_response = _get_dynamodb().get_item(
+            table_name=os.environ['ORDERS_TABLE'],
             key={
                 'PK': f"TENANT#{tenant_id}#ORDER#{order_id}",
                 'SK': 'INFO'
@@ -439,8 +440,8 @@ def calcular_tiempo_total_pedido(tenant_id, order_id):
         pedido = pedido_response.get('Item', {})
         
         # Obtener todas las etapas
-        etapas_response = dynamodb.query(
-            table_name='steps',
+        etapas_response = _get_dynamodb().query(
+            table_name=os.environ['STEPS_TABLE'],
             key_condition_expression='PK = :pk',
             expression_attribute_values={
                 ':pk': f"TENANT#{tenant_id}#ORDER#{order_id}"
@@ -467,3 +468,10 @@ def calcular_tiempo_total_pedido(tenant_id, order_id):
     except Exception as e:
         print(f"Error calculando tiempo total pedido: {str(e)}")
         return 0
+                                     
+
+# === FUNCIONES AUXILIARES (compartidas) ===
+def calcular_duracion(inicio, fin):
+    start = datetime.fromisoformat(inicio.replace('Z', '+00:00'))
+    end = datetime.fromisoformat(fin.replace('Z', '+00:00'))
+    return int((end - start).total_seconds())
