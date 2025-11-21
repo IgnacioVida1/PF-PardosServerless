@@ -5,8 +5,8 @@ import os
 from datetime import datetime
 from decimal import Decimal
 from boto3.dynamodb.conditions import Key
-from shared.database import DynamoDB
-from shared.events import EventBridge
+from Lambdas.shared.database import DynamoDB
+from Lambdas.shared.events import EventBridge
 
 # Inicialización lazy: No crear globales en import time
 dynamodb = None
