@@ -256,6 +256,7 @@ resources:
       Type: AWS::StepFunctions::StateMachine
       Properties:
         StateMachineName: OrderWorkflow-pardos-unified-dev
+        RoleArn: arn:aws:iam::724498596680:role/LabRole
         DefinitionString: !Sub |
           {
             "Comment": "Pardos Chicken Order Workflow",
