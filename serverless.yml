@@ -7,8 +7,6 @@ provider:
   region: us-east-1
   memorySize: 256
   timeout: 29
-  iam:
-    role: arn:aws:iam::773506457076:role/LabRole
   environment:
     CUSTOMERS_TABLE: CustomersTable-pardos-unified-dev
     ORDERS_TABLE: OrdersTable-pardos-unified-dev
@@ -240,7 +238,6 @@ resources:
         Targets:
           - Arn: !GetAtt OrderWorkflowStateMachine.Arn
             Id: StartOrderWorkflow
-            RoleArn: arn:aws:iam::773506457076:role/LabRole
             InputTransformer:
               InputPathsMap:
                 orderId: "$.detail.orderId"
@@ -331,4 +328,3 @@ resources:
               }
             }
           }
-        RoleArn: arn:aws:iam::773506457076:role/LabRole
