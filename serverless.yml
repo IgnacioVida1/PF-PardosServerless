@@ -1,12 +1,5 @@
-org: gabrielfrisancho
-service: pardos-restaurante
-
-plugins:
-  - serverless-python-requirements
-
-custom:
-  pythonRequirements:
-    dockerizePip: true
+org: amirykehara
+service: pardos-unified
 
 provider:
   name: aws
@@ -15,77 +8,172 @@ provider:
   memorySize: 256
   timeout: 29
   iam:
-    role: arn:aws:iam::213965374161:role/LabRole
+    role: arn:aws:iam::773506457076:role/LabRole
   environment:
-    ORDERS_TABLE: pardos-restaurante-orders
-    STEPS_TABLE: pardos-restaurante-steps
+    CUSTOMERS_TABLE: CustomersTable-pardos-unified-dev
+    ORDERS_TABLE: OrdersTable-pardos-unified-dev
+    STEPS_TABLE: StepsTable-pardos-unified-dev
+    USERS_TABLE: UsersTable-pardos-unified-dev
+    NOTIFICATIONS_TABLE: NotificationsTable-pardos-unified-dev
+    EVENT_BUS_NAME: PardosEventBus-pardos-unified-dev
+    JWT_SECRET: pardos-jwt-secret-key-2024
+  httpApi:
+    cors: true
 
 functions:
-  iniciarOrquestacion:
-    handler: orquestador/handler.iniciar_orquestacion
+  # Auth functions
+  register:
+    handler: handler.register
     events:
-      - eventBridge:
-          pattern:
-            source:
-              - cliente-ms
-            detail-type:
-              - OrderCreated
-
+      - httpApi:
+          path: /auth/register
+          method: post
+  login:
+    handler: handler.login
+    events:
+      - httpApi:
+          path: /auth/login
+          method: post
+  validate:
+    handler: handler.validate
+    events:
+      - httpApi:
+          path: /auth/validate
+          method: get
+  # Order management functions
+  createOrder:
+    handler: handler.create_order
+    events:
+      - httpApi:
+          path: /orders
+          method: post
+  getOrdersByCustomer:
+    handler: handler.get_orders_by_customer
+    events:
+      - httpApi:
+          path: /orders/{customerId}
+          method: get
+  createCustomer:
+    handler: handler.create_customer
+    events:
+      - httpApi:
+          path: /customers
+          method: post
+  getCustomer:
+    handler: handler.get_customer
+    events:
+      - httpApi:
+          path: /customers/{customerId}
+          method: get
+  getOrder:
+    handler: handler.get_order
+    events:
+      - httpApi:
+          path: /order/{orderId}
+          method: get
   iniciarEtapa:
-    handler: etapas/handler.iniciar_etapa
+    handler: handler.iniciar_etapa
     events:
-      - http:
+      - httpApi:
           path: /etapas/iniciar
           method: post
-          cors: true
-          integration: lambda
-
   completarEtapa:
-    handler: etapas/handler.completar_etapa
+    handler: handler.completar_etapa
     events:
-      - http:
-          path: /etapas/completar
+      - httpApi:
+          path:  /etapas/completar
           method: post
-          cors: true
-          integration: lambda
-
   obtenerResumen:
-    handler: dashboard/handler.obtener_resumen
+    handler: handler.obtener_resumen
     events:
-      - http:
+      - httpApi:
           path: /dashboard/resumen
           method: get
-          cors: true
-          integration: lambda
-
   obtenerMetricas:
-    handler: dashboard/handler.obtener_metricas
+    handler: handler.obtener_metricas
     events:
-      - http:
+      - httpApi:
           path: /dashboard/metricas
           method: get
-          cors: true
-          integration: lambda
-
   obtenerPedidos:
-    handler: dashboard/handler.obtener_pedidos
+    handler: handler.obtener_pedidos
     events:
-      - http:
+      - httpApi:
           path: /dashboard/pedidos
           method: get
-          cors: true
-          integration: lambda
+  cookingStage:
+    handler: handler.process_cooking
+  packagingStage:
+    handler: handler.process_packaging
+  deliveryStage:
+    handler: handler.process_delivery
+  deliveredStage:
+    handler: handler.process_delivered
+  # Notification functions
+  sendOrderNotification:
+    handler: handler.send_order_notification
+    events:
+      - eventBridge:
+          eventBus: !Ref PardosEventBus
+          pattern:
+            source:
+              - "pardos.orders"
+              - "pardos.etapas"
+            detail-type:
+              - "OrderCreated"
+              - "OrderStageStarted"
+              - "StageStarted" 
+              - "StageCompleted"
+              - "OrderDelivered"
+  getCustomerNotifications:
+    handler: handler.get_customer_notifications
+    events:
+      - httpApi:
+          path: /notifications/{customerId}
+          method: get
+  markNotificationRead:
+    handler: handler.mark_notification_read
+    events:
+      - httpApi:
+          path: /notifications/{customerId}/read
+          method: put
 
 resources:
   Resources:
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: UsersTable-pardos-unified-dev
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    CustomersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: CustomersTable-pardos-unified-dev
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
     OrdersTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: pardos-restaurante-orders
+        TableName: OrdersTable-pardos-unified-dev
         AttributeDefinitions:
           - AttributeName: PK
             AttributeType: S
           - AttributeName: SK
+            AttributeType: S
+          - AttributeName: customerId
             AttributeType: S
         KeySchema:
           - AttributeName: PK
@@ -93,11 +181,18 @@ resources:
           - AttributeName: SK
             KeyType: RANGE
         BillingMode: PAY_PER_REQUEST
+        GlobalSecondaryIndexes:
+          - IndexName: customerId-index
+            KeySchema:
+              - AttributeName: customerId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
 
     StepsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: pardos-restaurante-steps
+        TableName: StepsTable-pardos-unified-dev
         AttributeDefinitions:
           - AttributeName: PK
             AttributeType: S
@@ -109,3 +204,131 @@ resources:
           - AttributeName: SK
             KeyType: RANGE
         BillingMode: PAY_PER_REQUEST
+
+    NotificationsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: NotificationsTable-pardos-unified-dev
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+
+    PardosEventBus:
+      Type: AWS::Events::EventBus
+      Properties:
+        Name: PardosEventBus-pardos-unified-dev
+
+    OrderCreatedRule:
+      Type: AWS::Events::Rule
+      Properties:
+        Name: OrderCreatedRule
+        EventBusName: !Ref PardosEventBus
+        EventPattern:
+          source:
+            - "pardos.orders"
+          detail-type:
+            - "OrderCreated"
+        State: ENABLED
+        Targets:
+          - Arn: !GetAtt OrderWorkflowStateMachine.Arn
+            Id: StartOrderWorkflow
+            RoleArn: arn:aws:iam::773506457076:role/LabRole
+            InputTransformer:
+              InputPathsMap:
+                orderId: "$.detail.orderId"
+                tenantId: "$.detail.tenantId"
+                customerId: "$.detail.customerId"
+              InputTemplate: |
+                {
+                  "orderId": "<orderId>",
+                  "tenantId": "<tenantId>",
+                  "customerId": "<customerId>"
+                }
+
+    OrderWorkflowStateMachine:
+      Type: AWS::StepFunctions::StateMachine
+      Properties:
+        StateMachineName: OrderWorkflow-pardos-unified-dev
+        DefinitionString: !Sub |
+          {
+            "Comment": "Pardos Chicken Order Workflow",
+            "StartAt": "Cooking",
+            "States": {
+              "Cooking": {
+                "Type": "Task",
+                "Resource": "${CookingStageLambdaFunction.Arn}",
+                "TimeoutSeconds": 300,
+                "Retry": [
+                  {
+                    "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 3
+                  }
+                ],
+                "Next": "WaitAfterCooking"
+              },
+              "WaitAfterCooking": {
+                "Type": "Wait",
+                "Seconds": 5,
+                "Next": "Packaging"
+              },
+              "Packaging": {
+                "Type": "Task", 
+                "Resource": "${PackagingStageLambdaFunction.Arn}",
+                "TimeoutSeconds": 300,
+                "Retry": [
+                  {
+                    "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 3
+                  }
+                ],
+                "Next": "WaitAfterPackaging"
+              },
+              "WaitAfterPackaging": {
+                "Type": "Wait",
+                "Seconds": 3,
+                "Next": "Delivery"
+              },
+              "Delivery": {
+                "Type": "Task",
+                "Resource": "${DeliveryStageLambdaFunction.Arn}",
+                "TimeoutSeconds": 300,
+                "Retry": [
+                  {
+                    "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 3
+                  }
+                ],
+                "Next": "WaitAfterDelivery"
+              },
+              "WaitAfterDelivery": {
+                "Type": "Wait",
+                "Seconds": 10,
+                "Next": "Delivered"
+              },
+              "Delivered": {
+                "Type": "Task",
+                "Resource": "${DeliveredStageLambdaFunction.Arn}",
+                "TimeoutSeconds": 300,
+                "Retry": [
+                  {
+                    "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 3
+                  }
+                ],
+                "End": true
+              }
+            }
+          }
+        RoleArn: arn:aws:iam::773506457076:role/LabRole

@@ -1,12 +1,18 @@
 import json
-import boto3
 import uuid
 import os
 from datetime import datetime
 from decimal import Decimal
 from boto3.dynamodb.conditions import Key
-from Lambdas.shared.database import DynamoDB
-from Lambdas.shared.events import EventBridge
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
+try:
+    from shared.database import DynamoDB
+    from shared.events import EventBridge
+except ImportError:
+    from Lambdas.shared.database import DynamoDB
+    from Lambdas.shared.events import EventBridge
 
 # Inicialización lazy: No crear globales en import time
 dynamodb = None
@@ -23,8 +29,6 @@ def _get_events():
     if events is None:
         events = EventBridge()
     return events
-
-# === FUNCIONES DEL CLIENTE (API para crear/obtener customers y orders) ===
 
 def create_order(event, context):
     try:

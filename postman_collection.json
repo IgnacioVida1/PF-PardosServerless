@@ -1,0 +1,391 @@
+{
+  "info": {
+    "name": "Pardos Serverless API",
+    "description": "Colección completa para probar todas las APIs de Pardos Chicken Serverless",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "{{API_GATEWAY_URL}}",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customerId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "orderId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "test_user_{{$randomInt}}",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "test{{$randomInt}}@pardos.com",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Autenticación",
+      "item": [
+        {
+          "name": "1.1 Registrar Usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('customerId', response.customerId);",
+                  "    pm.collectionVariables.set('username', response.username);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"password123\",\n  \"name\": \"Usuario Test\",\n  \"phone\": \"999888777\",\n  \"address\": \"Av. Test 123, Lima\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "1.2 Iniciar Sesión",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('authToken', response.token);",
+                  "    pm.collectionVariables.set('customerId', response.customerId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "1.3 Validar Token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/validate",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "validate"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Gestión de Clientes",
+      "item": [
+        {
+          "name": "2.1 Crear Cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('customerId', response.customerId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Cliente Test\",\n  \"email\": \"cliente{{$randomInt}}@test.com\",\n  \"phone\": \"999888777\",\n  \"address\": \"Av. Cliente 123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["customers"]
+            }
+          }
+        },
+        {
+          "name": "2.2 Obtener Cliente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["customers", "{{customerId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Gestión de Pedidos",
+      "item": [
+        {
+          "name": "3.1 Crear Pedido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('orderId', response.orderId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"items\": [\n    {\n      \"productId\": \"pollo_1_4\",\n      \"qty\": 1,\n      \"price\": 25.9\n    },\n    {\n      \"productId\": \"chicha_grande\",\n      \"qty\": 1,\n      \"price\": 8.5\n    }\n  ],\n  \"total\": 34.4\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            }
+          }
+        },
+        {
+          "name": "3.2 Obtener Pedidos por Cliente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{customerId}}"]
+            }
+          }
+        },
+        {
+          "name": "3.3 Obtener Detalle de Pedido",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/order/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["order", "{{orderId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Gestión de Restaurante",
+      "item": [
+        {
+          "name": "4.1 Iniciar Etapa",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"tenantId\": \"pardos\",\n  \"stage\": \"COOKING\",\n  \"assignedTo\": \"Chef Juan\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/etapas/iniciar",
+              "host": ["{{baseUrl}}"],
+              "path": ["etapas", "iniciar"]
+            }
+          }
+        },
+        {
+          "name": "4.2 Completar Etapa",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"tenantId\": \"pardos\",\n  \"stage\": \"COOKING\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/etapas/completar",
+              "host": ["{{baseUrl}}"],
+              "path": ["etapas", "completar"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Dashboard",
+      "item": [
+        {
+          "name": "5.1 Obtener Resumen",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/resumen",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard", "resumen"]
+            }
+          }
+        },
+        {
+          "name": "5.2 Obtener Métricas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metricas",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard", "metricas"]
+            }
+          }
+        },
+        {
+          "name": "5.3 Obtener Pedidos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/pedidos",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard", "pedidos"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Notificaciones",
+      "item": [
+        {
+          "name": "6.1 Obtener Notificaciones del Cliente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "{{customerId}}"]
+            }
+          }
+        },
+        {
+          "name": "6.2 Marcar Notificación como Leída",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notificationSK\": \"NOTIFICATION#2025-11-22T10:30:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{customerId}}/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "{{customerId}}", "read"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-configuración de variables",
+          "if (!pm.collectionVariables.get('baseUrl')) {",
+          "    pm.collectionVariables.set('baseUrl', 'https://your-api-id.execute-api.us-east-1.amazonaws.com');",
+          "}"
+        ]
+      }
+    }
+  ]
+}
