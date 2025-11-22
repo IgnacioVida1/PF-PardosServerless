@@ -7,6 +7,8 @@ provider:
   region: us-east-1
   memorySize: 256
   timeout: 29
+  iam:
+    role: arn:aws:iam::724498596680:role/LabRole
   environment:
     CUSTOMERS_TABLE: CustomersTable-pardos-unified-dev
     ORDERS_TABLE: OrdersTable-pardos-unified-dev
