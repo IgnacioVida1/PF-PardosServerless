@@ -20,6 +20,9 @@ provider:
   httpApi:
     cors: true
 
+plugins:
+  - serverless-python-requirements
+
 functions:
   # Auth functions
   register:
