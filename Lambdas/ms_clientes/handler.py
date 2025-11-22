@@ -40,8 +40,8 @@ def create_order(event, context):
 
         # Convierte a Decimal para items y total
         if 'items' in body:
-            body['items'] = [{k: Decimal(v) if k == 'price' else v for k, v in item.items()} for item in body['items']]
-        total = Decimal(body.get('total', '0'))
+            body['items'] = [{k: Decimal(str(v)) if k == 'price' else v for k, v in item.items()} for item in body['items']]
+        total = Decimal(str(body.get('total', '0')))
 
         # Crea el registro de order metadata en DynamoDB con SK="INFO"
         order_metadata = {
