@@ -156,19 +156,20 @@ def get_order(event, context):
         order_id = event['pathParameters']['orderId']
         tenant_id = 'pardos'
         pk = f"TENANT#{tenant_id}#ORDER#{order_id}"
+        
+        # Obtener order metadata
         order_response = _get_dynamodb().query(
             table_name=os.environ['ORDERS_TABLE'],
-            key_condition_expression='PK = :pk AND SK = :sk',
-            expression_attribute_values={
-                ':pk': pk,
-                ':sk': 'INFO'
-            }
+            key_condition_expression=Key('PK').eq(pk) & Key('SK').eq('INFO')
         )
-        order = order_response.get('Items', [{}])[0]
-        if not order:
+        
+        items = order_response.get('Items', [])
+        if not items:
             return {'statusCode': 404, 'body': json.dumps({'error': 'Order not found'})}
         
-        # Join con customer (solo PK)
+        order = items[0]
+        
+        # Join con customer
         customer_pk = f"TENANT#{tenant_id}#CUSTOMER#{order['customerId']}"
         customer_response = _get_dynamodb().get_item(
             table_name=os.environ['CUSTOMERS_TABLE'],
@@ -179,23 +180,38 @@ def get_order(event, context):
         # Join con steps
         steps_response = _get_dynamodb().query(
             table_name=os.environ['STEPS_TABLE'],
-            key_condition_expression='PK = :pk',
-            expression_attribute_values={':pk': pk}
+            key_condition_expression=Key('PK').eq(pk)
         )
         steps = steps_response.get('Items', [])
         
+        # Convertir items para JSON (Decimal to float)
+        items_json = []
+        for item in order.get('items', []):
+            items_json.append({
+                'productId': item.get('productId', ''),
+                'qty': int(item.get('qty', 0)),
+                'price': float(item.get('price', 0))
+            })
+        
         result = {
             'orderId': order_id,
-            'status': order['status'],
+            'status': order.get('status', 'CREATED'),
             'currentStep': order.get('currentStep', 'CREATED'),
             'total': float(order.get('total', 0)),
-            'items': order.get('items', []),
-            'customer': {'name': customer.get('name', 'N/A'), 'email': customer.get('email', 'N/A')},
-            'steps': [s['stepName'] for s in steps if 'stepName' in s]
+            'items': items_json,
+            'createdAt': order.get('createdAt', ''),
+            'customer': {
+                'name': customer.get('name', 'N/A'), 
+                'email': customer.get('email', 'N/A'),
+                'phone': customer.get('phone', 'N/A')
+            },
+            'steps': [s.get('stepName') for s in steps if s.get('stepName')]
         }
+        
         return {
             'statusCode': 200,
-            'body': json.dumps(result, default=str)
+            'body': json.dumps(result)
         }
     except Exception as e:
+        print(f"Error en get_order: {str(e)}")
         return {'statusCode': 500, 'body': json.dumps({'error': str(e)})}
