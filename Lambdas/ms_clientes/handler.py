@@ -160,7 +160,11 @@ def get_order(event, context):
         # Obtener order metadata
         order_response = _get_dynamodb().query(
             table_name=os.environ['ORDERS_TABLE'],
-            key_condition_expression=Key('PK').eq(pk) & Key('SK').eq('INFO')
+            key_condition_expression='PK = :pk AND SK = :sk',
+            expression_attribute_values={
+                ':pk': pk,
+                ':sk': 'INFO'
+            }
         )
         
         items = order_response.get('Items', [])
@@ -180,7 +184,8 @@ def get_order(event, context):
         # Join con steps
         steps_response = _get_dynamodb().query(
             table_name=os.environ['STEPS_TABLE'],
-            key_condition_expression=Key('PK').eq(pk)
+            key_condition_expression='PK = :pk',
+            expression_attribute_values={':pk': pk}
         )
         steps = steps_response.get('Items', [])
         
