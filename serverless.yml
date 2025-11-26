@@ -17,11 +17,12 @@ provider:
     NOTIFICATIONS_TABLE: NotificationsTable-pardos-unified-dev
     EVENT_BUS_NAME: PardosEventBus-pardos-unified-dev
     JWT_SECRET: pardos-jwt-secret-key-2024
+    DELIVERY_QUEUE_URL: !Ref DeliveryQueue
   httpApi:
     cors: true
 
 functions:
-  # Auth functions
+  # Auth functions (existentes)
   register:
     handler: handler.register
     events:
@@ -40,7 +41,8 @@ functions:
       - httpApi:
           path: /auth/validate
           method: get
-  # Order management functions
+  
+  # Order management functions (existentes)
   createOrder:
     handler: handler.create_order
     events:
@@ -71,6 +73,8 @@ functions:
       - httpApi:
           path: /order/{orderId}
           method: get
+
+  # Stage management (existentes)
   iniciarEtapa:
     handler: handler.iniciar_etapa
     events:
@@ -81,8 +85,10 @@ functions:
     handler: handler.completar_etapa
     events:
       - httpApi:
-          path:  /etapas/completar
+          path: /etapas/completar
           method: post
+
+  # Dashboard (existentes)
   obtenerResumen:
     handler: handler.obtener_resumen
     events:
@@ -101,6 +107,8 @@ functions:
       - httpApi:
           path: /dashboard/pedidos
           method: get
+
+  # Step Functions stages (existentes)
   cookingStage:
     handler: handler.process_cooking
   packagingStage:
@@ -109,7 +117,20 @@ functions:
     handler: handler.process_delivery
   deliveredStage:
     handler: handler.process_delivered
-  # Notification functions
+
+  # NUEVAS: Funciones para confirmaciones y control de capacidad
+  checkStageConfirmation:
+    handler: handler.check_stage_confirmation
+  confirmStage:
+    handler: handler.confirm_stage
+    events:
+      - httpApi:
+          path: /orders/{orderId}/confirm-stage
+          method: post
+  checkDeliveryQueue:
+    handler: handler.check_delivery_queue
+
+  # Notification functions (existentes)
   sendOrderNotification:
     handler: handler.send_order_notification
     events:
@@ -140,6 +161,7 @@ functions:
 
 resources:
   Resources:
+    # Tablas existentes
     UsersTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -221,11 +243,21 @@ resources:
             KeyType: RANGE
         BillingMode: PAY_PER_REQUEST
 
+    # Event Bus existente
     PardosEventBus:
       Type: AWS::Events::EventBus
       Properties:
         Name: PardosEventBus-pardos-unified-dev
 
+    # NUEVO: Cola SQS para control de capacidad
+    DeliveryQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: delivery-queue-pardos-unified-dev
+        VisibilityTimeout: 300
+        MessageRetentionPeriod: 86400
+
+    # Regla existente para iniciar Step Functions
     OrderCreatedRule:
       Type: AWS::Events::Rule
       Properties:
@@ -253,6 +285,7 @@ resources:
                   "customerId": "<customerId>"
                 }
 
+    # NUEVO: Step Functions modificado con confirmaciones y control de capacidad
     OrderWorkflowStateMachine:
       Type: AWS::StepFunctions::StateMachine
       Properties:
@@ -260,74 +293,151 @@ resources:
         RoleArn: arn:aws:iam::724498596680:role/LabRole
         DefinitionString: !Sub |
           {
-            "Comment": "Pardos Chicken Order Workflow",
+            "Comment": "Pardos Chicken Order Workflow - Con Confirmaciones Manuales y Control de Capacidad",
             "StartAt": "Cooking",
             "States": {
               "Cooking": {
                 "Type": "Task",
                 "Resource": "${CookingStageLambdaFunction.Arn}",
-                "TimeoutSeconds": 300,
-                "Retry": [
+                "TimeoutSeconds": 3600,
+                "Next": "WaitCookingConfirmation",
+                "ResultPath": "$.cookingResult"
+              },
+              "WaitCookingConfirmation": {
+                "Type": "Wait",
+                "Seconds": 10,
+                "Next": "CheckCookingConfirmation"
+              },
+              "CheckCookingConfirmation": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${CheckStageConfirmationLambdaFunction.Arn}",
+                  "Payload": {
+                    "orderId.$": "$.orderId",
+                    "tenantId.$": "$.tenantId",
+                    "expectedStage": "COOKING"
+                  }
+                },
+                "Next": "IsCookingConfirmed",
+                "ResultPath": "$.confirmation"
+              },
+              "IsCookingConfirmed": {
+                "Type": "Choice",
+                "Choices": [
                   {
-                    "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
-                    "IntervalSeconds": 2,
-                    "MaxAttempts": 3
+                    "Variable": "$.confirmation.Payload.confirmed",
+                    "BooleanEquals": true,
+                    "Next": "Packaging"
                   }
                 ],
-                "Next": "WaitAfterCooking"
-              },
-              "WaitAfterCooking": {
-                "Type": "Wait",
-                "Seconds": 5,
-                "Next": "Packaging"
+                "Default": "WaitCookingConfirmation"
               },
               "Packaging": {
-                "Type": "Task", 
+                "Type": "Task",
                 "Resource": "${PackagingStageLambdaFunction.Arn}",
-                "TimeoutSeconds": 300,
-                "Retry": [
+                "TimeoutSeconds": 3600,
+                "Next": "WaitPackagingConfirmation"
+              },
+              "WaitPackagingConfirmation": {
+                "Type": "Wait",
+                "Seconds": 10,
+                "Next": "CheckPackagingConfirmation"
+              },
+              "CheckPackagingConfirmation": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${CheckStageConfirmationLambdaFunction.Arn}",
+                  "Payload": {
+                    "orderId.$": "$.orderId",
+                    "tenantId.$": "$.tenantId",
+                    "expectedStage": "PACKAGING"
+                  }
+                },
+                "Next": "IsPackagingConfirmed",
+                "ResultPath": "$.packagingConfirmation"
+              },
+              "IsPackagingConfirmed": {
+                "Type": "Choice",
+                "Choices": [
                   {
-                    "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
-                    "IntervalSeconds": 2,
-                    "MaxAttempts": 3
+                    "Variable": "$.packagingConfirmation.Payload.confirmed",
+                    "BooleanEquals": true,
+                    "Next": "CheckDeliveryCapacity"
                   }
                 ],
-                "Next": "WaitAfterPackaging"
+                "Default": "WaitPackagingConfirmation"
               },
-              "WaitAfterPackaging": {
+              "CheckDeliveryCapacity": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${CheckDeliveryQueueLambdaFunction.Arn}",
+                  "Payload": {
+                    "orderId.$": "$.orderId",
+                    "tenantId.$": "$.tenantId"
+                  }
+                },
+                "Next": "CanProceedToDelivery",
+                "ResultPath": "$.capacityCheck"
+              },
+              "CanProceedToDelivery": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Variable": "$.capacityCheck.Payload.canProceed",
+                    "BooleanEquals": true,
+                    "Next": "Delivery"
+                  }
+                ],
+                "Default": "WaitForCapacity"
+              },
+              "WaitForCapacity": {
                 "Type": "Wait",
-                "Seconds": 3,
-                "Next": "Delivery"
+                "Seconds": 30,
+                "Next": "CheckDeliveryCapacity"
               },
               "Delivery": {
                 "Type": "Task",
                 "Resource": "${DeliveryStageLambdaFunction.Arn}",
-                "TimeoutSeconds": 300,
-                "Retry": [
-                  {
-                    "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
-                    "IntervalSeconds": 2,
-                    "MaxAttempts": 3
-                  }
-                ],
-                "Next": "WaitAfterDelivery"
+                "TimeoutSeconds": 7200,
+                "Next": "WaitDeliveryConfirmation"
               },
-              "WaitAfterDelivery": {
+              "WaitDeliveryConfirmation": {
                 "Type": "Wait",
                 "Seconds": 10,
-                "Next": "Delivered"
+                "Next": "CheckDeliveryConfirmation"
+              },
+              "CheckDeliveryConfirmation": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${CheckStageConfirmationLambdaFunction.Arn}",
+                  "Payload": {
+                    "orderId.$": "$.orderId",
+                    "tenantId.$": "$.tenantId",
+                    "expectedStage": "DELIVERY"
+                  }
+                },
+                "Next": "IsDeliveryConfirmed",
+                "ResultPath": "$.deliveryConfirmation"
+              },
+              "IsDeliveryConfirmed": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Variable": "$.deliveryConfirmation.Payload.confirmed",
+                    "BooleanEquals": true,
+                    "Next": "Delivered"
+                  }
+                ],
+                "Default": "WaitDeliveryConfirmation"
               },
               "Delivered": {
                 "Type": "Task",
                 "Resource": "${DeliveredStageLambdaFunction.Arn}",
                 "TimeoutSeconds": 300,
-                "Retry": [
-                  {
-                    "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
-                    "IntervalSeconds": 2,
-                    "MaxAttempts": 3
-                  }
-                ],
                 "End": true
               }
             }
