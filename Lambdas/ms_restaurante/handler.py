@@ -17,6 +17,7 @@ except ImportError:
 # Inicialización lazy: No crear globales en import time
 dynamodb = None
 events = None
+sqs_client = None
 
 def _get_dynamodb():
     global dynamodb
@@ -29,6 +30,17 @@ def _get_events():
     if events is None:
         events = EventBridge()
     return events
+
+def _get_sqs():
+    global sqs_client
+    if sqs_client is None:
+        import boto3
+        sqs_client = boto3.client('sqs')
+    return sqs_client
+
+# ==============================================
+# FUNCIONES EXISTENTES (se mantienen igual)
+# ==============================================
 
 def iniciar_etapa(event, context):
     try:
@@ -222,7 +234,195 @@ def process_delivered(event, context):
         print(f"Error en process_delivered: {str(e)}")
         raise
 
-# Auxiliar: Actualizar paso (adaptado a lazy)
+# ==============================================
+# NUEVAS FUNCIONES PARA STEP FUNCTIONS MEJORADO
+# ==============================================
+
+def check_stage_confirmation(event, context):
+    """
+    Verifica en StepsTable si una etapa específica está confirmada (status: DONE)
+    """
+    try:
+        order_id = event['orderId']
+        tenant_id = event['tenantId']
+        expected_stage = event['expectedStage']
+        
+        print(f"Checking confirmation for order: {order_id}, stage: {expected_stage}")
+        
+        # Buscar en StepsTable todas las entradas para esta etapa
+        response = _get_dynamodb().query(
+            table_name=os.environ['STEPS_TABLE'],
+            key_condition_expression='PK = :pk AND begins_with(SK, :sk)',
+            expression_attribute_values={
+                ':pk': f"TENANT#{tenant_id}#ORDER#{order_id}",
+                ':sk': f"STEP#{expected_stage}"
+            }
+        )
+        
+        # Verificar si hay alguna entrada de esta etapa con status DONE
+        confirmed = False
+        if response.get('Items'):
+            for item in response['Items']:
+                if item.get('status') == 'DONE':
+                    confirmed = True
+                    print(f"Stage {expected_stage} confirmed for order {order_id}")
+                    break
+        
+        print(f"Confirmation status: {confirmed}")
+        
+        return {
+            'confirmed': confirmed,
+            'orderId': order_id,
+            'stage': expected_stage,
+            'tenantId': tenant_id,
+            'checkedAt': datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"Error checking stage confirmation: {str(e)}")
+        return {
+            'confirmed': False,
+            'error': str(e),
+            'orderId': event.get('orderId', 'unknown'),
+            'stage': event.get('expectedStage', 'unknown')
+        }
+
+def confirm_stage(event, context):
+    """
+    Confirma manualmente una etapa del pedido (llamado desde el frontend)
+    """
+    try:
+        order_id = event['pathParameters']['orderId']
+        body = json.loads(event['body']) if isinstance(event['body'], str) else event['body']
+        stage = body['stage']
+        user_id = body.get('userId', 'system')
+        tenant_id = body.get('tenantId', 'pardos')
+        
+        timestamp = datetime.utcnow().isoformat()
+        
+        print(f"Confirming stage {stage} for order {order_id} by user {user_id}")
+        
+        # Registrar en StepsTable que la etapa está confirmada/completada
+        step_record = {
+            'PK': f"TENANT#{tenant_id}#ORDER#{order_id}",
+            'SK': f"STEP#{stage}#{timestamp}",
+            'stepName': stage,
+            'status': 'DONE',
+            'startedAt': timestamp,
+            'finishedAt': timestamp,
+            'completedBy': user_id,
+            'tenantId': tenant_id,
+            'orderId': order_id
+        }
+        _get_dynamodb().put_item(os.environ['STEPS_TABLE'], step_record)
+        
+        # Actualizar el estado actual en OrdersTable
+        _get_dynamodb().update_item(
+            table_name=os.environ['ORDERS_TABLE'],
+            key={
+                'PK': f"TENANT#{tenant_id}#ORDER#{order_id}",
+                'SK': 'INFO'
+            },
+            update_expression="SET currentStep = :step, updatedAt = :now",
+            expression_values={
+                ':step': stage,
+                ':now': timestamp
+            }
+        )
+        
+        # Publicar evento de etapa completada
+        _get_events().publish_event(
+            source="pardos.etapas",
+            detail_type="StageCompleted",
+            detail={
+                'orderId': order_id,
+                'tenantId': tenant_id,
+                'stage': stage,
+                'completedBy': user_id,
+                'completedAt': timestamp
+            }
+        )
+        
+        # Si es etapa de DELIVERY, agregar a la cola SQS
+        if stage == 'DELIVERY':
+            sqs = _get_sqs()
+            sqs.send_message(
+                QueueUrl=os.environ['DELIVERY_QUEUE_URL'],
+                MessageBody=json.dumps({
+                    'orderId': order_id,
+                    'tenantId': tenant_id,
+                    'stage': stage,
+                    'addedToQueueAt': timestamp
+                })
+            )
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'message': f'Stage {stage} confirmed for order {order_id}',
+                'orderId': order_id,
+                'stage': stage,
+                'confirmedBy': user_id,
+                'confirmedAt': timestamp
+            })
+        }
+        
+    except Exception as e:
+        print(f"Error confirming stage: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'error': f'Failed to confirm stage: {str(e)}'
+            })
+        }
+
+def check_delivery_queue(event, context):
+    """
+    Verifica la cola SQS para determinar si hay capacidad para nuevos deliveries
+    """
+    try:
+        order_id = event['orderId']
+        tenant_id = event.get('tenantId', 'pardos')
+        
+        print(f"Checking delivery queue capacity for order: {order_id}")
+        
+        # Obtener cantidad de mensajes en cola de delivery
+        sqs = _get_sqs()
+        response = sqs.get_queue_attributes(
+            QueueUrl=os.environ['DELIVERY_QUEUE_URL'],
+            AttributeNames=['ApproximateNumberOfMessages']
+        )
+        
+        messages_count = int(response['Attributes']['ApproximateNumberOfMessages'])
+        max_capacity = 10  # Límite de 10 pedidos en delivery
+        
+        can_proceed = messages_count < max_capacity
+        
+        print(f"Queue status: {messages_count}/{max_capacity} - Can proceed: {can_proceed}")
+        
+        return {
+            'canProceed': can_proceed,
+            'currentQueueSize': messages_count,
+            'maxCapacity': max_capacity,
+            'orderId': order_id,
+            'tenantId': tenant_id,
+            'checkedAt': datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"Error checking delivery queue: {str(e)}")
+        return {
+            'canProceed': False,
+            'error': str(e),
+            'currentQueueSize': 0,
+            'maxCapacity': 10,
+            'orderId': event.get('orderId', 'unknown')
+        }
+
+# ==============================================
+# FUNCIONES AUXILIARES (existentes)
+# ==============================================
+
 def _update_step(order_id, tenant_id, step, status="IN_PROGRESS"):
     pk = f"TENANT#{tenant_id}#ORDER#{order_id}"
     timestamp = datetime.utcnow().isoformat()
@@ -253,9 +453,7 @@ def _update_step(order_id, tenant_id, step, status="IN_PROGRESS"):
         }
     )
 
-
 def calcular_duracion(inicio, fin):
     start = datetime.fromisoformat(inicio.replace('Z', '+00:00'))
     end = datetime.fromisoformat(fin.replace('Z', '+00:00'))
     return int((end - start).total_seconds())
-
