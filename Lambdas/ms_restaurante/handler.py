@@ -163,7 +163,7 @@ def process_cooking(event, context):
         order_id = event.get('detail', {}).get('orderId') or event.get('orderId')
         tenant_id = event.get('tenantId', 'pardos')
         _update_step(order_id, tenant_id, 'COOKING', 'IN_PROGRESS')
-        return {'orderId': order_id, 'stage': 'COOKING'}
+        return {'orderId': order_id, 'tenantId': tenant_id, 'stage': 'COOKING'}
     except Exception as e:
         print(f"Error en process_cooking: {str(e)}")
         raise
@@ -173,7 +173,7 @@ def process_packaging(event, context):
         order_id = event.get('orderId')
         tenant_id = event.get('tenantId', 'pardos')
         _update_step(order_id, tenant_id, 'PACKAGING', 'IN_PROGRESS')
-        return {'orderId': order_id, 'stage': 'PACKAGING'}
+        return {'orderId': order_id, 'tenantId': tenant_id, 'stage': 'PACKAGING'}
     except Exception as e:
         print(f"Error en process_packaging: {str(e)}")
         raise
@@ -183,7 +183,7 @@ def process_delivery(event, context):
         order_id = event.get('orderId')
         tenant_id = event.get('tenantId', 'pardos')
         _update_step(order_id, tenant_id, 'DELIVERY', 'IN_PROGRESS')
-        return {'orderId': order_id, 'stage': 'DELIVERY'}
+        return {'orderId': order_id,  'tenantId': tenant_id,'stage': 'DELIVERY'}
     except Exception as e:
         print(f"Error en process_delivery: {str(e)}")
         raise
@@ -229,7 +229,7 @@ def process_delivered(event, context):
                 'timestamp': timestamp
             }
         )
-        return {'orderId': order_id, 'stage': 'DELIVERED'}
+        return {'orderId': order_id,  'tenantId': tenant_id,'stage': 'DELIVERED'}
     except Exception as e:
         print(f"Error en process_delivered: {str(e)}")
         raise
@@ -247,8 +247,9 @@ def check_stage_confirmation(event, context):
         tenant_id = event['tenantId']
         expected_stage = event['expectedStage']
         
-        print(f"Checking confirmation for order: {order_id}, stage: {expected_stage}")
-        
+        print(f"🔍 Checking confirmation for:")
+        print(f"   PK: TENANT#{tenant_id}#ORDER#{order_id}")
+        print(f"   SK prefix: STEP#{expected_stage}")
         # Buscar en StepsTable todas las entradas para esta etapa
         response = _get_dynamodb().query(
             table_name=os.environ['STEPS_TABLE'],
@@ -258,7 +259,7 @@ def check_stage_confirmation(event, context):
                 ':sk': f"STEP#{expected_stage}"
             }
         )
-        
+        print(f"📊 Query found {len(response.get('Items', []))} items")
         # Verificar si hay alguna entrada de esta etapa con status DONE
         confirmed = False
         if response.get('Items'):
@@ -266,8 +267,7 @@ def check_stage_confirmation(event, context):
                 if item.get('status') == 'DONE':
                     confirmed = True
                     print(f"Stage {expected_stage} confirmed for order {order_id}")
-                    break
-        
+                    break        
         print(f"Confirmation status: {confirmed}")
         
         return {
@@ -305,7 +305,7 @@ def confirm_stage(event, context):
         # Registrar en StepsTable que la etapa está confirmada/completada
         step_record = {
             'PK': f"TENANT#{tenant_id}#ORDER#{order_id}",
-            'SK': f"STEP#{stage}#{timestamp}",
+            'SK': f"STEP#{stage}",
             'stepName': stage,
             'status': 'DONE',
             'startedAt': timestamp,
