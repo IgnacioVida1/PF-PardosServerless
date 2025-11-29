@@ -1,0 +1,354 @@
+{
+  "info": {
+    "name": "Pardos Chicken API - CORREGIDA",
+    "description": "API corregida con los bodies exactos según los handlers",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://tu-api.execute-api.us-east-1.amazonaws.com",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customerId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "orderId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "cliente_pardos",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 1. AUTENTICACIÓN",
+      "item": [
+        {
+          "name": "📝 Register - Registrar Usuario",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"cliente_pardos\",\n  \"email\": \"cliente@pardos.com\",\n  \"password\": \"Pardos2024!\",\n  \"name\": \"Carlos Rodriguez\",\n  \"phone\": \"+51987654321\",\n  \"address\": \"Av. Ejemplo 123, Lima\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "🔑 Login - Iniciar Sesión",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"Pardos2024!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "postman": {
+              "script": [
+                "pm.test(\"Login exitoso\", function () {\n    pm.response.to.have.status(200);\n});\n\npm.test(\"Token JWT recibido\", function () {\n    var jsonData = pm.response.json();\n    pm.expect(jsonData.token).to.exist;\n    pm.collectionVariables.set(\"token\", jsonData.token);\n    \n    if (jsonData.customerId) {\n        pm.collectionVariables.set(\"customerId\", jsonData.customerId);\n    }\n});"
+              ]
+            }
+          }
+        },
+        {
+          "name": "✅ Validate - Validar Token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/validate",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "validate"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "👥 2. CLIENTES",
+      "item": [
+        {
+          "name": "👀 Get Customer - Obtener Cliente",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["customers", "{{customerId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🍗 3. PEDIDOS - FLUJO PRINCIPAL",
+      "item": [
+        {
+          "name": "🛒 Create Order - Crear Pedido (INICIA WORKFLOW)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"tenantId\": \"pardos\",\n  \"items\": [\n    {\n      \"productId\": \"pollo_1_4\",\n      \"qty\": 1,\n      \"price\": 25.00\n    },\n    {\n      \"productId\": \"papas_fritas\",\n      \"qty\": 2,\n      \"price\": 8.00\n    }\n  ],\n  \"total\": 41.00\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            },
+            "postman": {
+              "script": [
+                "pm.test(\"Pedido creado exitosamente\", function () {\n    pm.response.to.have.status(201);\n});\n\npm.test(\"Obtener orderId\", function () {\n    var jsonData = pm.response.json();\n    if (jsonData.orderId) {\n        pm.collectionVariables.set(\"orderId\", jsonData.orderId);\n        console.log(\"Order ID para pruebas:\", jsonData.orderId);\n    }\n});"
+              ]
+            }
+          }
+        },
+        {
+          "name": "📋 Get Orders by Customer - Pedidos del Cliente",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{customerId}}"]
+            }
+          }
+        },
+        {
+          "name": "🔍 Get Order - Obtener Pedido Específico",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/order/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["order", "{{orderId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "⚙️ 4. GESTIÓN DE ETAPAS (WORKFLOW)",
+      "item": [
+        {
+          "name": "▶️ Iniciar Etapa Manual",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"tenantId\": \"pardos\",\n  \"stage\": \"COOKING\",\n  \"assignedTo\": \"chef_principal\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/etapas/iniciar",
+              "host": ["{{baseUrl}}"],
+              "path": ["etapas", "iniciar"]
+            }
+          }
+        },
+        {
+          "name": "🔄 Confirm Stage - Confirmar Etapa (Para Step Functions)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stage\": \"COOKING\",\n  \"userId\": \"supervisor_cocina\",\n  \"tenantId\": \"pardos\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}/confirm-stage",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{orderId}}", "confirm-stage"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📊 5. DASHBOARD & REPORTES",
+      "item": [
+        {
+          "name": "📈 Obtener Resumen",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/resumen",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard", "resumen"]
+            }
+          }
+        },
+        {
+          "name": "📊 Obtener Métricas",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metricas",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard", "metricas"]
+            }
+          }
+        },
+        {
+          "name": "📦 Obtener Pedidos Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/pedidos",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard", "pedidos"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔔 6. NOTIFICACIONES",
+      "item": [
+        {
+          "name": "📨 Get Customer Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "{{customerId}}"]
+            }
+          }
+        },
+        {
+          "name": "✔️ Mark Notification as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notificationSK\": \"NOTIFICATION#2024-01-15T14:30:00\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{customerId}}/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "{{customerId}}", "read"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
