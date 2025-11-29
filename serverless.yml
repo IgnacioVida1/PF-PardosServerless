@@ -1,4 +1,4 @@
-org: julio123
+org: ignaciovidal
 service: pardos-unified
 
 provider:
@@ -8,7 +8,7 @@ provider:
   memorySize: 256
   timeout: 29
   iam:
-    role: arn:aws:iam::724498596680:role/LabRole
+    role: arn:aws:iam::841059623266:role/LabRole
   environment:
     CUSTOMERS_TABLE: CustomersTable-pardos-unified-dev
     ORDERS_TABLE: OrdersTable-pardos-unified-dev
@@ -24,19 +24,19 @@ provider:
 functions:
   # Auth functions (existentes)
   register:
-    handler: handler.register
+    handler: Lambdas/auth_service/handler.register
     events:
       - httpApi:
           path: /auth/register
           method: post
   login:
-    handler: handler.login
+    handler: Lambdas/auth_service/handler.login
     events:
       - httpApi:
           path: /auth/login
           method: post
   validate:
-    handler: handler.validate
+    handler: Lambdas/auth_service/handler.validate
     events:
       - httpApi:
           path: /auth/validate
@@ -44,31 +44,31 @@ functions:
   
   # Order management functions (existentes)
   createOrder:
-    handler: handler.create_order
+    handler: Lambdas/ms_clientes/handler.create_order
     events:
       - httpApi:
           path: /orders
           method: post
   getOrdersByCustomer:
-    handler: handler.get_orders_by_customer
+    handler: Lambdas/ms_clientes/handler.get_orders_by_customer
     events:
       - httpApi:
           path: /orders/{customerId}
           method: get
   createCustomer:
-    handler: handler.create_customer
+    handler: Lambdas/ms_clientes/handler.create_customer
     events:
       - httpApi:
           path: /customers
           method: post
   getCustomer:
-    handler: handler.get_customer
+    handler: Lambdas/ms_clientes/handler.get_customer
     events:
       - httpApi:
           path: /customers/{customerId}
           method: get
   getOrder:
-    handler: handler.get_order
+    handler: Lambdas/ms_clientes/handler.get_order
     events:
       - httpApi:
           path: /order/{orderId}
@@ -76,13 +76,13 @@ functions:
 
   # Stage management (existentes)
   iniciarEtapa:
-    handler: handler.iniciar_etapa
+    handler: Lambdas/ms_restaurante/handler.iniciar_etapa
     events:
       - httpApi:
           path: /etapas/iniciar
           method: post
   completarEtapa:
-    handler: handler.completar_etapa
+    handler: Lambdas/ms_restaurante/handler.completar_etapa
     events:
       - httpApi:
           path: /etapas/completar
@@ -90,19 +90,19 @@ functions:
 
   # Dashboard (existentes)
   obtenerResumen:
-    handler: handler.obtener_resumen
+    handler: Lambdas/ms_dashboard/handler.obtener_resumen
     events:
       - httpApi:
           path: /dashboard/resumen
           method: get
   obtenerMetricas:
-    handler: handler.obtener_metricas
+    handler: Lambdas/ms_dashboard/handler.obtener_metricas
     events:
       - httpApi:
           path: /dashboard/metricas
           method: get
   obtenerPedidos:
-    handler: handler.obtener_pedidos
+    handler: Lambdas/ms_dashboard/handler.obtener_pedidos
     events:
       - httpApi:
           path: /dashboard/pedidos
@@ -110,29 +110,29 @@ functions:
 
   # Step Functions stages (existentes)
   cookingStage:
-    handler: handler.process_cooking
+    handler: Lambdas/ms_restaurante/handler.process_cooking
   packagingStage:
-    handler: handler.process_packaging
+    handler: Lambdas/ms_restaurante/handler.process_packaging
   deliveryStage:
-    handler: handler.process_delivery
+    handler: Lambdas/ms_restaurante/handler.process_delivery
   deliveredStage:
-    handler: handler.process_delivered
+    handler: Lambdas/ms_restaurante/handler.process_delivered
 
   # NUEVAS: Funciones para confirmaciones y control de capacidad
   checkStageConfirmation:
-    handler: handler.check_stage_confirmation
+    handler: Lambdas/ms_restaurante/handler.check_stage_confirmation
   confirmStage:
-    handler: handler.confirm_stage
+    handler: Lambdas/ms_restaurante/handler.confirm_stage
     events:
       - httpApi:
           path: /orders/{orderId}/confirm-stage
           method: post
   checkDeliveryQueue:
-    handler: handler.check_delivery_queue
+    handler: Lambdas/ms_restaurante/handler.check_delivery_queue
 
   # Notification functions (existentes)
   sendOrderNotification:
-    handler: handler.send_order_notification
+    handler: Lambdas/notifications/handler.send_order_notification
     events:
       - eventBridge:
           eventBus: !Ref PardosEventBus
@@ -147,13 +147,13 @@ functions:
               - "StageCompleted"
               - "OrderDelivered"
   getCustomerNotifications:
-    handler: handler.get_customer_notifications
+    handler: Lambdas/notifications/handler.get_customer_notifications
     events:
       - httpApi:
           path: /notifications/{customerId}
           method: get
   markNotificationRead:
-    handler: handler.mark_notification_read
+    handler: Lambdas/notifications/handler.mark_notification_read
     events:
       - httpApi:
           path: /notifications/{customerId}/read
@@ -272,7 +272,7 @@ resources:
         Targets:
           - Arn: !GetAtt OrderWorkflowStateMachine.Arn
             Id: StartOrderWorkflow
-            RoleArn: arn:aws:iam::724498596680:role/LabRole
+            RoleArn: arn:aws:iam::841059623266:role/LabRole
             InputTransformer:
               InputPathsMap:
                 orderId: "$.detail.orderId"
@@ -290,7 +290,7 @@ resources:
       Type: AWS::StepFunctions::StateMachine
       Properties:
         StateMachineName: OrderWorkflow-pardos-unified-dev
-        RoleArn: arn:aws:iam::724498596680:role/LabRole
+        RoleArn: arn:aws:iam::841059623266:role/LabRole
         DefinitionString: !Sub |
           {
             "Comment": "Pardos Chicken Order Workflow - Con Confirmaciones Manuales y Control de Capacidad",
