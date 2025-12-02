@@ -194,6 +194,8 @@ def process_delivered(event, context):
         tenant_id = event.get('tenantId', 'pardos')
         pk = f"TENANT#{tenant_id}#ORDER#{order_id}"
         timestamp = datetime.utcnow().isoformat()
+        
+        # 1. Actualizar el estado del pedido a DELIVERED
         _get_dynamodb().update_item(
             table_name=os.environ['ORDERS_TABLE'],
             key={
@@ -208,6 +210,8 @@ def process_delivered(event, context):
                 ':now': timestamp
             }
         )
+        
+        # 2. Registrar etapa DELIVERED
         step_record = {
             'PK': pk,
             'SK': f"STEP#DELIVERED#{timestamp}",
@@ -219,6 +223,8 @@ def process_delivered(event, context):
             'orderId': order_id
         }
         _get_dynamodb().put_item(os.environ['STEPS_TABLE'], step_record)
+        
+        # 3. PUBLICAR EVENTO
         _get_events().publish_event(
             source="pardos.etapas",
             detail_type="OrderDelivered",
@@ -229,7 +235,38 @@ def process_delivered(event, context):
                 'timestamp': timestamp
             }
         )
-        return {'orderId': order_id,  'tenantId': tenant_id,'stage': 'DELIVERED'}
+        
+        # 4. ¡IMPORTANTE! - REMOVER DE LA COLA SQS
+        print(f"🔄 Removiendo orden {order_id} de la cola de delivery")
+        sqs = _get_sqs()
+        queue_url = os.environ['DELIVERY_QUEUE_URL']
+        
+        try:
+            # Buscar el mensaje correspondiente a este orderId
+            response = sqs.receive_message(
+                QueueUrl=queue_url,
+                MaxNumberOfMessages=10,  # Buscar en los últimos 10 mensajes
+                VisibilityTimeout=30,
+                WaitTimeSeconds=0
+            )
+            
+            if 'Messages' in response:
+                for message in response['Messages']:
+                    message_body = json.loads(message['Body'])
+                    if message_body.get('orderId') == order_id:
+                        # Eliminar el mensaje de la cola
+                        sqs.delete_message(
+                            QueueUrl=queue_url,
+                            ReceiptHandle=message['ReceiptHandle']
+                        )
+                        print(f"✅ Mensaje removido de la cola para orden {order_id}")
+                        break
+        except Exception as e:
+            print(f"⚠️ Error al remover de la cola: {str(e)}")
+            # No fallar si no podemos remover de la cola
+        
+        return {'orderId': order_id, 'tenantId': tenant_id, 'stage': 'DELIVERED'}
+        
     except Exception as e:
         print(f"Error en process_delivered: {str(e)}")
         raise
