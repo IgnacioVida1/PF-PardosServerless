@@ -305,7 +305,7 @@ resources:
               },
               "WaitCookingConfirmation": {
                 "Type": "Wait",
-                "Seconds": 10,
+                "Seconds": 3,
                 "Next": "CheckCookingConfirmation"
               },
               "CheckCookingConfirmation": {
@@ -341,7 +341,7 @@ resources:
               },
               "WaitPackagingConfirmation": {
                 "Type": "Wait",
-                "Seconds": 10,
+                "Seconds": 3,
                 "Next": "CheckPackagingConfirmation"
               },
               "CheckPackagingConfirmation": {
@@ -395,7 +395,7 @@ resources:
               },
               "WaitForCapacity": {
                 "Type": "Wait",
-                "Seconds": 30,
+                "Seconds": 5,
                 "Next": "CheckDeliveryCapacity"
               },
               "Delivery": {
@@ -406,7 +406,7 @@ resources:
               },
               "WaitDeliveryConfirmation": {
                 "Type": "Wait",
-                "Seconds": 10,
+                "Seconds": 3,
                 "Next": "CheckDeliveryConfirmation"
               },
               "CheckDeliveryConfirmation": {
@@ -442,3 +442,4 @@ resources:
               }
             }
           }
+
