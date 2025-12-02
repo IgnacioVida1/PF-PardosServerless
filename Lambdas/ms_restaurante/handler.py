@@ -195,6 +195,8 @@ def process_delivered(event, context):
         pk = f"TENANT#{tenant_id}#ORDER#{order_id}"
         timestamp = datetime.utcnow().isoformat()
         
+        print(f"🎯 Procesando entrega para orden {order_id}")
+        
         # 1. Actualizar el estado del pedido a DELIVERED
         _get_dynamodb().update_item(
             table_name=os.environ['ORDERS_TABLE'],
@@ -224,7 +226,7 @@ def process_delivered(event, context):
         }
         _get_dynamodb().put_item(os.environ['STEPS_TABLE'], step_record)
         
-        # 3. PUBLICAR EVENTO
+        # 3. Publicar evento
         _get_events().publish_event(
             source="pardos.etapas",
             detail_type="OrderDelivered",
@@ -236,40 +238,122 @@ def process_delivered(event, context):
             }
         )
         
-        # 4. ¡IMPORTANTE! - REMOVER DE LA COLA SQS
-        print(f"🔄 Removiendo orden {order_id} de la cola de delivery")
+        # 4. REMOVER DE LA COLA SQS - VERSIÓN MEJORADA
+        print(f"🔄 Intentando remover orden {order_id} de SQS")
         sqs = _get_sqs()
         queue_url = os.environ['DELIVERY_QUEUE_URL']
         
+        removed = False
+        max_attempts = 3
+        
+        for attempt in range(max_attempts):
+            try:
+                print(f"   Intento {attempt + 1} de {max_attempts}")
+                
+                # Buscar mensajes que contengan este orderId
+                response = sqs.receive_message(
+                    QueueUrl=queue_url,
+                    MaxNumberOfMessages=10,
+                    VisibilityTimeout=10,
+                    WaitTimeSeconds=0,
+                    MessageAttributeNames=['All']
+                )
+                
+                if 'Messages' in response:
+                    for message in response['Messages']:
+                        try:
+                            message_body = json.loads(message['Body'])
+                            print(f"   Mensaje encontrado: {message_body.get('orderId')}")
+                            
+                            if message_body.get('orderId') == order_id:
+                                # Eliminar el mensaje de la cola
+                                sqs.delete_message(
+                                    QueueUrl=queue_url,
+                                    ReceiptHandle=message['ReceiptHandle']
+                                )
+                                print(f"✅✅✅ MENSAJE REMOVIDO de SQS para orden {order_id}")
+                                removed = True
+                                break
+                        except json.JSONDecodeError:
+                            print(f"   ⚠️ Mensaje con formato inválido: {message['Body'][:50]}...")
+                            continue
+                
+                if removed:
+                    break
+                    
+            except Exception as e:
+                print(f"   ⚠️ Error en intento {attempt + 1}: {str(e)}")
+                continue
+        
+        if not removed:
+            print(f"⚠️ No se pudo encontrar/remover mensaje para orden {order_id} en SQS")
+            print(f"   Esto puede ser normal si el mensaje ya fue procesado o expiró")
+        
+        # 5. También verificar si hay mensajes viejos que limpiar
         try:
-            # Buscar el mensaje correspondiente a este orderId
-            response = sqs.receive_message(
-                QueueUrl=queue_url,
-                MaxNumberOfMessages=10,  # Buscar en los últimos 10 mensajes
-                VisibilityTimeout=30,
-                WaitTimeSeconds=0
-            )
-            
-            if 'Messages' in response:
-                for message in response['Messages']:
-                    message_body = json.loads(message['Body'])
-                    if message_body.get('orderId') == order_id:
-                        # Eliminar el mensaje de la cola
+            clean_old_messages_from_queue(sqs, queue_url)
+        except Exception as e:
+            print(f"⚠️ Error en limpieza adicional: {str(e)}")
+        
+        return {
+            'orderId': order_id, 
+            'tenantId': tenant_id, 
+            'stage': 'DELIVERED',
+            'sqsRemoved': removed
+        }
+        
+    except Exception as e:
+        print(f"❌ Error en process_delivered: {str(e)}")
+        raise
+
+def clean_old_messages_from_queue(sqs, queue_url, max_age_minutes=30):
+    """
+    Limpia mensajes antiguos de la cola
+    """
+    try:
+        print("🧹 Limpiando mensajes antiguos de SQS...")
+        
+        response = sqs.receive_message(
+            QueueUrl=queue_url,
+            MaxNumberOfMessages=10,
+            VisibilityTimeout=5,
+            WaitTimeSeconds=0
+        )
+        
+        if 'Messages' not in response:
+            print("   No hay mensajes para limpiar")
+            return 0
+        
+        cleaned = 0
+        current_time = datetime.utcnow()
+        
+        for message in response['Messages']:
+            try:
+                message_body = json.loads(message['Body'])
+                added_time_str = message_body.get('addedToQueueAt')
+                
+                if added_time_str:
+                    added_time = datetime.fromisoformat(added_time_str.replace('Z', '+00:00'))
+                    age_minutes = (current_time - added_time).total_seconds() / 60
+                    
+                    if age_minutes > max_age_minutes:
                         sqs.delete_message(
                             QueueUrl=queue_url,
                             ReceiptHandle=message['ReceiptHandle']
                         )
-                        print(f"✅ Mensaje removido de la cola para orden {order_id}")
-                        break
-        except Exception as e:
-            print(f"⚠️ Error al remover de la cola: {str(e)}")
-            # No fallar si no podemos remover de la cola
+                        cleaned += 1
+                        print(f"   🗑️ Mensaje antiguo removido ({age_minutes:.1f} minutos)")
+                        
+            except Exception as e:
+                print(f"   ⚠️ Error procesando mensaje: {str(e)}")
+                continue
         
-        return {'orderId': order_id, 'tenantId': tenant_id, 'stage': 'DELIVERED'}
+        print(f"   Total limpiado: {cleaned} mensajes antiguos")
+        return cleaned
         
     except Exception as e:
-        print(f"Error en process_delivered: {str(e)}")
-        raise
+        print(f"⚠️ Error en clean_old_messages_from_queue: {str(e)}")
+        return 0
 
 # ==============================================
 # NUEVAS FUNCIONES PARA STEP FUNCTIONS MEJORADO
