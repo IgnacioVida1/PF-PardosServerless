@@ -290,7 +290,7 @@ resources:
       Type: AWS::StepFunctions::StateMachine
       Properties:
         StateMachineName: OrderWorkflow-pardos-unified-dev
-        RoleArn: arn:aws:iam::724498596680:role/LabRole
+        RoleArn: arn:aws:iam::841059623266:role/LabRole
         DefinitionString: !Sub |
           {
             "Comment": "Pardos Chicken Order Workflow - Con Confirmaciones Manuales y Control de Capacidad",
@@ -442,5 +442,6 @@ resources:
               }
             }
           }
+
 
 
