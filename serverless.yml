@@ -1,4 +1,4 @@
-org: julio123
+org: ignaciovidal
 service: pardos-unified
 
 provider:
@@ -8,7 +8,7 @@ provider:
   memorySize: 256
   timeout: 29
   iam:
-    role: arn:aws:iam::724498596680:role/LabRole
+    role: arn:aws:iam::841059623266:role/LabRole
   environment:
     CUSTOMERS_TABLE: CustomersTable-pardos-unified-dev
     ORDERS_TABLE: OrdersTable-pardos-unified-dev
@@ -272,7 +272,7 @@ resources:
         Targets:
           - Arn: !GetAtt OrderWorkflowStateMachine.Arn
             Id: StartOrderWorkflow
-            RoleArn: arn:aws:iam::724498596680:role/LabRole
+            RoleArn: arn:aws:iam::841059623266:role/LabRole
             InputTransformer:
               InputPathsMap:
                 orderId: "$.detail.orderId"
@@ -442,4 +442,5 @@ resources:
               }
             }
           }
+
 
