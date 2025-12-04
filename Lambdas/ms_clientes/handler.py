@@ -111,28 +111,6 @@ def get_orders_by_customer(event, context):
     except Exception as e:
         return {'statusCode': 500, 'body': json.dumps({'error': str(e)})}
 
-def create_customer(event, context):
-    try:
-        body = json.loads(event['body']) if isinstance(event['body'], str) else event['body']
-        customer_id = str(uuid.uuid4())
-        tenant_id = body.get('tenantId', 'pardos')
-        timestamp = datetime.utcnow().isoformat()
-        customer = {
-            'PK': f"TENANT#{tenant_id}#CUSTOMER#{customer_id}",
-            'customerId': customer_id,
-            'tenantId': tenant_id,
-            'name': body.get('name'),
-            'email': body.get('email'),
-            'createdAt': timestamp
-        }
-        _get_dynamodb().put_item(os.environ['CUSTOMERS_TABLE'], customer)
-        return {
-            'statusCode': 201,
-            'body': json.dumps({'customerId': customer_id, 'message': 'Customer created'})
-        }
-    except Exception as e:
-        return {'statusCode': 500, 'body': json.dumps({'error': str(e)})}
-
 def get_customer(event, context):
     try:
         customer_id = event['pathParameters']['customerId']
