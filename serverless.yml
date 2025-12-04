@@ -18,10 +18,16 @@ provider:
     EVENT_BUS_NAME: PardosEventBus-pardos-unified-dev
     JWT_SECRET: pardos-jwt-secret-key-2024
     DELIVERY_QUEUE_URL: !Ref DeliveryQueue
+    STAGE_CONFIRMATION_TIMEOUT: 86400  # 24 horas en segundos
+    DELIVERY_CAPACITY_TIMEOUT: 3600    # 1 hora en segundos
   httpApi:
     cors: true
 
 functions:
+  cleanupExpiredTokens:
+  handler: Lambdas/cleanup/handler.cleanup_expired_tokens
+  events:
+    - schedule: rate(5 minutes)
   # Auth functions (existentes)
   register:
     handler: Lambdas/auth_service/handler.register
@@ -197,20 +203,41 @@ resources:
               ProjectionType: ALL
 
     StepsTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: StepsTable-pardos-unified-dev
-        AttributeDefinitions:
-          - AttributeName: PK
-            AttributeType: S
-          - AttributeName: SK
-            AttributeType: S
+  Type: AWS::DynamoDB::Table
+  Properties:
+    TableName: StepsTable-pardos-unified-dev
+    AttributeDefinitions:
+      - AttributeName: PK
+        AttributeType: S
+      - AttributeName: SK
+        AttributeType: S
+      - AttributeName: status
+        AttributeType: S
+      - AttributeName: expiresAt
+        AttributeType: S
+    KeySchema:
+      - AttributeName: PK
+        KeyType: HASH
+      - AttributeName: SK
+        KeyType: RANGE
+    BillingMode: PAY_PER_REQUEST
+    GlobalSecondaryIndexes:
+      - IndexName: status-expiresAt-index
         KeySchema:
-          - AttributeName: PK
+          - AttributeName: status
             KeyType: HASH
-          - AttributeName: SK
+          - AttributeName: expiresAt
             KeyType: RANGE
-        BillingMode: PAY_PER_REQUEST
+        Projection:
+          ProjectionType: ALL
+      - IndexName: stage-status-index
+        KeySchema:
+          - AttributeName: SK
+            KeyType: HASH
+          - AttributeName: status
+            KeyType: RANGE
+        Projection:
+          ProjectionType: ALL
 
     NotificationsTable:
       Type: AWS::DynamoDB::Table
@@ -417,6 +444,7 @@ resources:
               }
             }
           }
+
 
 
 
