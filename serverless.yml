@@ -228,16 +228,16 @@ resources:
               KeyType: HASH
             - AttributeName: expiresAt
               KeyType: RANGE
-        Projection:
-          ProjectionType: ALL
-      - IndexName: stage-status-index
-        KeySchema:
-          - AttributeName: SK
-            KeyType: HASH
-          - AttributeName: status
-            KeyType: RANGE
-        Projection:
-          ProjectionType: ALL
+          Projection:
+            ProjectionType: ALL
+        - IndexName: stage-status-index
+          KeySchema:
+            - AttributeName: SK
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
 
     NotificationsTable:
       Type: AWS::DynamoDB::Table
@@ -444,6 +444,7 @@ resources:
               }
             }
           }
+
 
 
 
