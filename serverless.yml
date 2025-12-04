@@ -55,12 +55,6 @@ functions:
       - httpApi:
           path: /orders/{customerId}
           method: get
-  createCustomer:
-    handler: Lambdas/ms_clientes/handler.create_customer
-    events:
-      - httpApi:
-          path: /customers
-          method: post
   getCustomer:
     handler: Lambdas/ms_clientes/handler.get_customer
     events:
@@ -73,20 +67,6 @@ functions:
       - httpApi:
           path: /order/{orderId}
           method: get
-
-  # Stage management (existentes)
-  iniciarEtapa:
-    handler: Lambdas/ms_restaurante/handler.iniciar_etapa
-    events:
-      - httpApi:
-          path: /etapas/iniciar
-          method: post
-  completarEtapa:
-    handler: Lambdas/ms_restaurante/handler.completar_etapa
-    events:
-      - httpApi:
-          path: /etapas/completar
-          method: post
 
   # Dashboard (existentes)
   obtenerResumen:
@@ -437,6 +417,7 @@ resources:
               }
             }
           }
+
 
 
 
