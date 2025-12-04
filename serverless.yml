@@ -203,31 +203,31 @@ resources:
               ProjectionType: ALL
 
     StepsTable:
-  Type: AWS::DynamoDB::Table
-  Properties:
-    TableName: StepsTable-pardos-unified-dev
-    AttributeDefinitions:
-      - AttributeName: PK
-        AttributeType: S
-      - AttributeName: SK
-        AttributeType: S
-      - AttributeName: status
-        AttributeType: S
-      - AttributeName: expiresAt
-        AttributeType: S
-    KeySchema:
-      - AttributeName: PK
-        KeyType: HASH
-      - AttributeName: SK
-        KeyType: RANGE
-    BillingMode: PAY_PER_REQUEST
-    GlobalSecondaryIndexes:
-      - IndexName: status-expiresAt-index
-        KeySchema:
-          - AttributeName: status
-            KeyType: HASH
-          - AttributeName: expiresAt
-            KeyType: RANGE
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: StepsTable-pardos-unified-dev
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: expiresAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      GlobalSecondaryIndexes:
+        - IndexName: status-expiresAt-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: expiresAt
+              KeyType: RANGE
         Projection:
           ProjectionType: ALL
       - IndexName: stage-status-index
@@ -444,6 +444,7 @@ resources:
               }
             }
           }
+
 
 
 
