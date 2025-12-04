@@ -14,6 +14,9 @@ except ImportError:
     from Lambdas.shared.database import DynamoDB
     from Lambdas.shared.events import EventBridge
 
+STAGE_CONFIRMATION_TIMEOUT = int(os.environ.get('STAGE_CONFIRMATION_TIMEOUT', 86400))
+MAX_DELIVERY_CAPACITY = 5  # Máximo 5 entregas simultáneas
+
 # Inicialización lazy: No crear globales en import time
 dynamodb = None
 events = None
@@ -38,125 +41,159 @@ def _get_sqs():
         sqs_client = boto3.client('sqs')
     return sqs_client
 
-# ==============================================
-# FUNCIONES EXISTENTES (se mantienen igual)
-# ==============================================
-
-def iniciar_etapa(event, context):
+def wait_stage_confirmation(event, context):
+    """
+    Espera confirmación manual de una etapa usando Task Token
+    """
     try:
-        body = json.loads(event['body']) if isinstance(event['body'], str) else event['body']
-        order_id = body['orderId']
-        tenant_id = body['tenantId']
-        stage = body['stage']
-        assigned_to = body.get('assignedTo', 'Sistema')
-        timestamp = datetime.utcnow().isoformat()
-        pk = f"TENANT#{tenant_id}#ORDER#{order_id}"
-        step_record = {
-            'PK': pk,
-            'SK': f"STEP#{stage}#{timestamp}",
-            'stepName': stage,
-            'status': 'IN_PROGRESS',
-            'startedAt': timestamp,
-            'assignedTo': assigned_to,
+        task_token = event.get('taskToken')
+        order_id = event['orderId']
+        tenant_id = event['tenantId']
+        stage = event['stage']
+        
+        if not task_token:
+            raise ValueError("Task Token es requerido")
+        
+        # Guardar el token en DynamoDB para confirmación posterior
+        current_time = datetime.now()
+        expiration_time = current_time + timedelta(seconds=STAGE_CONFIRMATION_TIMEOUT)
+        
+        steps_table.put_item(Item={
+            'PK': f'ORDER#{order_id}',
+            'SK': f'TOKEN#{stage}',
+            'taskToken': task_token,
+            'orderId': order_id,
             'tenantId': tenant_id,
-            'orderId': order_id
-        }
-        _get_dynamodb().put_item(os.environ['STEPS_TABLE'], step_record)
-        _get_dynamodb().update_item(
-            table_name=os.environ['ORDERS_TABLE'],
-            key={
-                'PK': pk,
-                'SK': 'INFO'
-            },
-            update_expression="SET currentStep = :step, updatedAt = :now",
-            expression_values={
-                ':step': stage,
-                ':now': timestamp
-            }
+            'stage': stage,
+            'status': 'PENDING_CONFIRMATION',
+            'createdAt': current_time.isoformat(),
+            'expiresAt': expiration_time.isoformat(),
+            'ttl': int(expiration_time.timestamp())
+        })
+        
+        # Publicar evento de espera de confirmación
+        eventbridge = _get_events()
+        eventbridge.put_events(
+            Entries=[
+                {
+                    'Source': 'pardos.stepfunctions',
+                    'DetailType': 'StageConfirmationPending',
+                    'EventBusName': os.environ['EVENT_BUS_NAME'],
+                    'Detail': json.dumps({
+                        'orderId': order_id,
+                        'stage': stage,
+                        'tenantId': tenant_id,
+                        'timestamp': current_time.isoformat(),
+                        'timeout': STAGE_CONFIRMATION_TIMEOUT
+                    })
+                }
+            ]
         )
-        _get_events().publish_event(
-            source="pardos.etapas",
-            detail_type="StageStarted",
-            detail={
-                'orderId': order_id,
-                'tenantId': tenant_id,
-                'stage': stage,
-                'assignedTo': assigned_to,
-                'timestamp': timestamp
-            }
-        )
+        
         return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': f'Etapa {stage} iniciada',
-                'stepRecord': step_record
-            })
+            "status": "WAITING",
+            "message": f"Esperando confirmación para etapa {stage}",
+            "orderId": order_id,
+            "stage": stage,
+            "timeout": STAGE_CONFIRMATION_TIMEOUT
         }
+        
     except Exception as e:
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+        # Si hay error, notificar a Step Functions
+        if 'taskToken' in event:
+            stepfunctions.send_task_failure(
+                taskToken=event['taskToken'],
+                error=str(type(e).__name__),
+                cause=str(e)
+            )
+        raise e
 
-def completar_etapa(event, context):
+def wait_delivery_capacity(event, context):
+    """
+    Espera capacidad disponible para delivery usando Task Token
+    """
     try:
-        body = json.loads(event['body']) if isinstance(event['body'], str) else event['body']
-        order_id = body['orderId']
-        tenant_id = body['tenantId']
-        stage = body['stage']
-        pk = f"TENANT#{tenant_id}#ORDER#{order_id}"
-        response = _get_dynamodb().query(
-            table_name=os.environ['STEPS_TABLE'],
-            key_condition_expression='PK = :pk AND begins_with(SK, :sk)',
-            expression_attribute_values={
-                ':pk': pk,
-                ':sk': f"STEP#{stage}"
-            }
+        task_token = event.get('taskToken')
+        order_id = event['orderId']
+        tenant_id = event['tenantId']
+        
+        if not task_token:
+            raise ValueError("Task Token es requerido")
+        
+        # Verificar capacidad actual en la cola
+        queue_attributes = sqs.get_queue_attributes(
+            QueueUrl=delivery_queue_url,
+            AttributeNames=['ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible']
         )
-        if not response.get('Items'):
+        
+        messages_in_flight = int(queue_attributes['Attributes'].get('ApproximateNumberOfMessagesNotVisible', 0))
+        
+        # Si hay capacidad disponible
+        if messages_in_flight < MAX_DELIVERY_CAPACITY:
+            # Reservar un slot
+            message_id = str(uuid.uuid4())
+            sqs.send_message(
+                QueueUrl=delivery_queue_url,
+                MessageBody=json.dumps({
+                    'orderId': order_id,
+                    'tenantId': tenant_id,
+                    'action': 'RESERVE_DELIVERY_SLOT',
+                    'timestamp': datetime.now().isoformat()
+                }),
+                MessageGroupId='delivery-capacity',
+                MessageDeduplicationId=message_id
+            )
+            
+            # Notificar éxito inmediato
+            stepfunctions.send_task_success(
+                taskToken=task_token,
+                output=json.dumps({
+                    "canProceed": True,
+                    "message": "Capacidad disponible para delivery",
+                    "queuePosition": messages_in_flight + 1,
+                    "reservedAt": datetime.now().isoformat()
+                })
+            )
+            
             return {
-                'statusCode': 404,
-                'body': json.dumps({'error': 'Etapa no encontrada'})
+                "status": "CAPACITY_AVAILABLE",
+                "canProceed": True
             }
-        latest_step = max(response['Items'], key=lambda x: x['startedAt'])
-        timestamp = datetime.utcnow().isoformat()
-        _get_dynamodb().update_item(
-            table_name=os.environ['STEPS_TABLE'],
-            key={
-                'PK': latest_step['PK'],
-                'SK': latest_step['SK']
-            },
-            update_expression="SET #s = :status, finishedAt = :finished",
-            expression_names={'#s': 'status'},
-            expression_values={
-                ':status': 'COMPLETED',
-                ':finished': timestamp
-            }
-        )
-        _get_events().publish_event(
-            source="pardos.etapas",
-            detail_type="StageCompleted",
-            detail={
+        else:
+            # Guardar token para notificación cuando haya capacidad
+            current_time = datetime.now()
+            expiration_time = current_time + timedelta(hours=1)
+            
+            steps_table.put_item(Item={
+                'PK': f'ORDER#{order_id}',
+                'SK': f'DELIVERY_CAPACITY_TOKEN',
+                'taskToken': task_token,
                 'orderId': order_id,
                 'tenantId': tenant_id,
-                'stage': stage,
-                'startedAt': latest_step['startedAt'],
-                'completedAt': timestamp,
-                'duration': calcular_duracion(latest_step['startedAt'], timestamp)
-            }
-        )
-        return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': f'Etapa {stage} completada',
-                'duration': calcular_duracion(latest_step['startedAt'], timestamp)
+                'status': 'WAITING_CAPACITY',
+                'createdAt': current_time.isoformat(),
+                'expiresAt': expiration_time.isoformat(),
+                'ttl': int(expiration_time.timestamp())
             })
-        }
+            
+            # Enviar heartbeat para mantener vivo el token
+            stepfunctions.send_task_heartbeat(taskToken=task_token)
+            
+            return {
+                "status": "WAITING_CAPACITY",
+                "canProceed": False,
+                "message": f"Esperando capacidad. {messages_in_flight}/{MAX_DELIVERY_CAPACITY} slots ocupados",
+                "queuePosition": messages_in_flight + 1
+            }
+            
     except Exception as e:
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+        if 'taskToken' in event:
+            stepfunctions.send_task_failure(
+                taskToken=event['taskToken'],
+                error=str(type(e).__name__),
+                cause=str(e)
+            )
+        raise e
 
 def process_cooking(event, context):
     try:
@@ -359,186 +396,158 @@ def clean_old_messages_from_queue(sqs, queue_url, max_age_minutes=30):
 # NUEVAS FUNCIONES PARA STEP FUNCTIONS MEJORADO
 # ==============================================
 
-def check_stage_confirmation(event, context):
+def release_delivery_capacity(event, context):
     """
-    Verifica en StepsTable si una etapa específica está confirmada (status: DONE)
-    """
-    try:
-        order_id = event['orderId']
-        tenant_id = event['tenantId']
-        expected_stage = event['expectedStage']
-        
-        print(f"🔍 Checking confirmation for:")
-        print(f"   PK: TENANT#{tenant_id}#ORDER#{order_id}")
-        print(f"   SK prefix: STEP#{expected_stage}")
-        # Buscar en StepsTable todas las entradas para esta etapa
-        response = _get_dynamodb().query(
-            table_name=os.environ['STEPS_TABLE'],
-            key_condition_expression='PK = :pk AND begins_with(SK, :sk)',
-            expression_attribute_values={
-                ':pk': f"TENANT#{tenant_id}#ORDER#{order_id}",
-                ':sk': f"STEP#{expected_stage}"
-            }
-        )
-        print(f"📊 Query found {len(response.get('Items', []))} items")
-        # Verificar si hay alguna entrada de esta etapa con status DONE
-        confirmed = False
-        if response.get('Items'):
-            for item in response['Items']:
-                if item.get('status') == 'DONE':
-                    confirmed = True
-                    print(f"Stage {expected_stage} confirmed for order {order_id}")
-                    break        
-        print(f"Confirmation status: {confirmed}")
-        
-        return {
-            'confirmed': confirmed,
-            'orderId': order_id,
-            'stage': expected_stage,
-            'tenantId': tenant_id,
-            'checkedAt': datetime.utcnow().isoformat()
-        }
-        
-    except Exception as e:
-        print(f"Error checking stage confirmation: {str(e)}")
-        return {
-            'confirmed': False,
-            'error': str(e),
-            'orderId': event.get('orderId', 'unknown'),
-            'stage': event.get('expectedStage', 'unknown')
-        }
-
-def confirm_stage(event, context):
-    """
-    Confirma manualmente una etapa del pedido (llamado desde el frontend)
+    Liberar capacidad de delivery cuando un pedido se completa
     """
     try:
         order_id = event['pathParameters']['orderId']
-        body = json.loads(event['body']) if isinstance(event['body'], str) else event['body']
-        stage = body['stage']
-        user_id = body.get('userId', 'system')
-        tenant_id = body.get('tenantId', 'pardos')
         
-        timestamp = datetime.utcnow().isoformat()
+        # Eliminar mensaje de la cola (liberar capacidad)
+        sqs.purge_queue(QueueUrl=delivery_queue_url)
         
-        print(f"Confirming stage {stage} for order {order_id} by user {user_id}")
-        
-        # Registrar en StepsTable que la etapa está confirmada/completada
-        step_record = {
-            'PK': f"TENANT#{tenant_id}#ORDER#{order_id}",
-            'SK': f"STEP#{stage}",
-            'stepName': stage,
-            'status': 'DONE',
-            'startedAt': timestamp,
-            'finishedAt': timestamp,
-            'completedBy': user_id,
-            'tenantId': tenant_id,
-            'orderId': order_id
-        }
-        _get_dynamodb().put_item(os.environ['STEPS_TABLE'], step_record)
-        
-        # Actualizar el estado actual en OrdersTable
-        _get_dynamodb().update_item(
-            table_name=os.environ['ORDERS_TABLE'],
-            key={
-                'PK': f"TENANT#{tenant_id}#ORDER#{order_id}",
-                'SK': 'INFO'
-            },
-            update_expression="SET currentStep = :step, updatedAt = :now",
-            expression_values={
-                ':step': stage,
-                ':now': timestamp
+        # Buscar tokens de capacidad pendientes
+        response = steps_table.query(
+            KeyConditionExpression='PK = :pk AND begins_with(SK, :sk)',
+            ExpressionAttributeValues={
+                ':pk': f'ORDER#{order_id}',
+                ':sk': 'DELIVERY_CAPACITY_TOKEN'
             }
         )
         
-        # Publicar evento de etapa completada
-        _get_events().publish_event(
-            source="pardos.etapas",
-            detail_type="StageCompleted",
-            detail={
-                'orderId': order_id,
-                'tenantId': tenant_id,
-                'stage': stage,
-                'completedBy': user_id,
-                'completedAt': timestamp
-            }
-        )
-        
-        # Si es etapa de DELIVERY, agregar a la cola SQS
-        if stage == 'DELIVERY':
-            sqs = _get_sqs()
-            sqs.send_message(
-                QueueUrl=os.environ['DELIVERY_QUEUE_URL'],
-                MessageBody=json.dumps({
-                    'orderId': order_id,
-                    'tenantId': tenant_id,
-                    'stage': stage,
-                    'addedToQueueAt': timestamp
-                })
-            )
+        # Notificar a todos los tokens pendientes
+        for item in response.get('Items', []):
+            try:
+                stepfunctions.send_task_success(
+                    taskToken=item['taskToken'],
+                    output=json.dumps({
+                        "capacityReleased": True,
+                        "orderId": order_id,
+                        "releasedAt": datetime.now().isoformat()
+                    })
+                )
+                
+                # Eliminar el token
+                steps_table.delete_item(
+                    Key={
+                        'PK': item['PK'],
+                        'SK': item['SK']
+                    }
+                )
+            except:
+                pass  # Token podría ya haber expirado
         
         return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': f'Stage {stage} confirmed for order {order_id}',
-                'orderId': order_id,
-                'stage': stage,
-                'confirmedBy': user_id,
-                'confirmedAt': timestamp
+            "statusCode": 200,
+            "body": json.dumps({
+                "message": "Capacidad liberada exitosamente",
+                "orderId": order_id
             })
         }
         
     except Exception as e:
-        print(f"Error confirming stage: {str(e)}")
         return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'error': f'Failed to confirm stage: {str(e)}'
+            "statusCode": 500,
+            "body": json.dumps({
+                "error": str(e)
+            })
+        }
+def confirm_stage(event, context):
+    """
+    Endpoint HTTP para confirmar etapa manualmente
+    """
+    try:
+        order_id = event['pathParameters']['orderId']
+        body = json.loads(event['body'])
+        stage = body['stage']
+        confirmed_by = body.get('confirmedBy', 'unknown')
+        
+        # Buscar el token en DynamoDB
+        response = steps_table.get_item(
+            Key={
+                'PK': f'ORDER#{order_id}',
+                'SK': f'TOKEN#{stage}'
+            }
+        )
+        
+        if 'Item' not in response:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({
+                    "error": "Token no encontrado o expirado",
+                    "orderId": order_id,
+                    "stage": stage
+                })
+            }
+        
+        item = response['Item']
+        task_token = item['taskToken']
+        
+        # Enviar éxito a Step Functions
+        stepfunctions.send_task_success(
+            taskToken=task_token,
+            output=json.dumps({
+                "confirmed": True,
+                "stage": stage,
+                "confirmedAt": datetime.now().isoformat(),
+                "confirmedBy": confirmed_by,
+                "orderId": order_id
+            })
+        )
+        
+        # Actualizar estado en DynamoDB
+        steps_table.update_item(
+            Key={
+                'PK': f'ORDER#{order_id}',
+                'SK': f'TOKEN#{stage}'
+            },
+            UpdateExpression="SET #status = :status, confirmedAt = :confirmedAt, confirmedBy = :confirmedBy",
+            ExpressionAttributeNames={
+                '#status': 'status'
+            },
+            ExpressionAttributeValues={
+                ':status': 'CONFIRMED',
+                ':confirmedAt': datetime.now().isoformat(),
+                ':confirmedBy': confirmed_by
+            }
+        )
+        
+        # Publicar evento de confirmación
+        eventbridge = boto3.client('events')
+        eventbridge.put_events(
+            Entries=[
+                {
+                    'Source': 'pardos.stepfunctions',
+                    'DetailType': 'StageConfirmed',
+                    'EventBusName': os.environ['EVENT_BUS_NAME'],
+                    'Detail': json.dumps({
+                        'orderId': order_id,
+                        'stage': stage,
+                        'confirmedBy': confirmed_by,
+                        'confirmedAt': datetime.now().isoformat()
+                    })
+                }
+            ]
+        )
+        
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "message": "Etapa confirmada exitosamente",
+                "orderId": order_id,
+                "stage": stage
+            })
+        }
+        
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "body": json.dumps({
+                "error": str(e),
+                "message": "Error al confirmar etapa"
             })
         }
 
-def check_delivery_queue(event, context):
-    """
-    Verifica la cola SQS para determinar si hay capacidad para nuevos deliveries
-    """
-    try:
-        order_id = event['orderId']
-        tenant_id = event.get('tenantId', 'pardos')
-        
-        print(f"Checking delivery queue capacity for order: {order_id}")
-        
-        # Obtener cantidad de mensajes en cola de delivery
-        sqs = _get_sqs()
-        response = sqs.get_queue_attributes(
-            QueueUrl=os.environ['DELIVERY_QUEUE_URL'],
-            AttributeNames=['ApproximateNumberOfMessages']
-        )
-        
-        messages_count = int(response['Attributes']['ApproximateNumberOfMessages'])
-        max_capacity = 10  # Límite de 10 pedidos en delivery
-        
-        can_proceed = messages_count < max_capacity
-        
-        print(f"Queue status: {messages_count}/{max_capacity} - Can proceed: {can_proceed}")
-        
-        return {
-            'canProceed': can_proceed,
-            'currentQueueSize': messages_count,
-            'maxCapacity': max_capacity,
-            'orderId': order_id,
-            'tenantId': tenant_id,
-            'checkedAt': datetime.utcnow().isoformat()
-        }
-        
-    except Exception as e:
-        print(f"Error checking delivery queue: {str(e)}")
-        return {
-            'canProceed': False,
-            'error': str(e),
-            'currentQueueSize': 0,
-            'maxCapacity': 10,
-            'orderId': event.get('orderId', 'unknown')
-        }
 
 # ==============================================
 # FUNCIONES AUXILIARES (existentes)
