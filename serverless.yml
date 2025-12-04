@@ -118,17 +118,22 @@ functions:
   deliveredStage:
     handler: Lambdas/ms_restaurante/handler.process_delivered
 
-  # NUEVAS: Funciones para confirmaciones y control de capacidad
-  checkStageConfirmation:
-    handler: Lambdas/ms_restaurante/handler.check_stage_confirmation
+  waitStageConfirmation:
+    handler: Lambdas/ms_restaurante/handler.wait_stage_confirmation 
+  waitDeliveryCapacity:
+    handler: Lambdas/ms_restaurante/handler.wait_delivery_capacity
   confirmStage:
     handler: Lambdas/ms_restaurante/handler.confirm_stage
     events:
       - httpApi:
           path: /orders/{orderId}/confirm-stage
           method: post
-  checkDeliveryQueue:
-    handler: Lambdas/ms_restaurante/handler.check_delivery_queue
+  releaseDeliveryCapacity:
+    handler: Lambdas/ms_restaurante/handler.release_delivery_capacity
+    events:
+      - httpApi:
+          path: /orders/{orderId}/release-capacity
+          method: post
 
   # Notification functions (existentes)
   sendOrderNotification:
@@ -293,7 +298,7 @@ resources:
         RoleArn: arn:aws:iam::841059623266:role/LabRole
         DefinitionString: !Sub |
           {
-            "Comment": "Pardos Chicken Order Workflow - Con Confirmaciones Manuales y Control de Capacidad",
+            "Comment": "Pardos Chicken Order Workflow",
             "StartAt": "Cooking",
             "States": {
               "Cooking": {
@@ -301,37 +306,42 @@ resources:
                 "Resource": "${CookingStageLambdaFunction.Arn}",
                 "TimeoutSeconds": 3600,
                 "Next": "WaitCookingConfirmation",
-                "ResultPath": "$.cookingResult"
+                "ResultPath": "$.cookingResult",
+                "Catch": [
+                  {
+                    "ErrorEquals": ["States.ALL"],
+                    "Next": "HandleCookingError",
+                    "ResultPath": "$.error"
+                  }
+                ]
               },
               "WaitCookingConfirmation": {
-                "Type": "Wait",
-                "Seconds": 3,
-                "Next": "CheckCookingConfirmation"
-              },
-              "CheckCookingConfirmation": {
                 "Type": "Task",
-                "Resource": "arn:aws:states:::lambda:invoke",
+                "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
                 "Parameters": {
-                  "FunctionName": "${CheckStageConfirmationLambdaFunction.Arn}",
+                  "FunctionName": "${WaitStageConfirmationLambdaFunction.Arn}",
                   "Payload": {
                     "orderId.$": "$.orderId",
                     "tenantId.$": "$.tenantId",
-                    "expectedStage": "COOKING"
+                    "stage": "COOKING",
+                    "taskToken.$": "$$.Task.Token"
                   }
                 },
-                "Next": "IsCookingConfirmed",
-                "ResultPath": "$.confirmation"
-              },
-              "IsCookingConfirmed": {
-                "Type": "Choice",
-                "Choices": [
+                "TimeoutSeconds": 86400,
+                "HeartbeatSeconds": 300,
+                "Next": "Packaging",
+                "Catch": [
                   {
-                    "Variable": "$.confirmation.Payload.confirmed",
-                    "BooleanEquals": true,
-                    "Next": "Packaging"
+                    "ErrorEquals": ["States.Timeout"],
+                    "Next": "HandleConfirmationTimeout",
+                    "ResultPath": "$.timeoutError"
+                  },
+                  {
+                    "ErrorEquals": ["States.TaskFailed"],
+                    "Next": "HandleConfirmationFailure",
+                    "ResultPath": "$.failureError"
                   }
-                ],
-                "Default": "WaitCookingConfirmation"
+                ]
               },
               "Packaging": {
                 "Type": "Task",
@@ -340,63 +350,47 @@ resources:
                 "Next": "WaitPackagingConfirmation"
               },
               "WaitPackagingConfirmation": {
-                "Type": "Wait",
-                "Seconds": 3,
-                "Next": "CheckPackagingConfirmation"
-              },
-              "CheckPackagingConfirmation": {
                 "Type": "Task",
-                "Resource": "arn:aws:states:::lambda:invoke",
+                "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
                 "Parameters": {
-                  "FunctionName": "${CheckStageConfirmationLambdaFunction.Arn}",
+                  "FunctionName": "${WaitStageConfirmationLambdaFunction.Arn}",
                   "Payload": {
                     "orderId.$": "$.orderId",
                     "tenantId.$": "$.tenantId",
-                    "expectedStage": "PACKAGING"
+                    "stage": "PACKAGING",
+                    "taskToken.$": "$$.Task.Token"
                   }
                 },
-                "Next": "IsPackagingConfirmed",
-                "ResultPath": "$.packagingConfirmation"
+                "TimeoutSeconds": 86400,
+                "HeartbeatSeconds": 300,
+                "Next": "WaitDeliveryCapacity"
               },
-              "IsPackagingConfirmed": {
-                "Type": "Choice",
-                "Choices": [
-                  {
-                    "Variable": "$.packagingConfirmation.Payload.confirmed",
-                    "BooleanEquals": true,
-                    "Next": "CheckDeliveryCapacity"
-                  }
-                ],
-                "Default": "WaitPackagingConfirmation"
-              },
-              "CheckDeliveryCapacity": {
+              "WaitDeliveryCapacity": {
                 "Type": "Task",
-                "Resource": "arn:aws:states:::lambda:invoke",
+                "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
                 "Parameters": {
-                  "FunctionName": "${CheckDeliveryQueueLambdaFunction.Arn}",
+                  "FunctionName": "${WaitDeliveryCapacityLambdaFunction.Arn}",
                   "Payload": {
                     "orderId.$": "$.orderId",
-                    "tenantId.$": "$.tenantId"
+                    "tenantId.$": "$.tenantId",
+                    "taskToken.$": "$$.Task.Token"
                   }
                 },
-                "Next": "CanProceedToDelivery",
-                "ResultPath": "$.capacityCheck"
-              },
-              "CanProceedToDelivery": {
-                "Type": "Choice",
-                "Choices": [
+                "TimeoutSeconds": 3600,
+                "HeartbeatSeconds": 60,
+                "Next": "Delivery",
+                "Catch": [
                   {
-                    "Variable": "$.capacityCheck.Payload.canProceed",
-                    "BooleanEquals": true,
-                    "Next": "Delivery"
+                    "ErrorEquals": ["States.Timeout"],
+                    "Next": "RetryDeliveryCapacity",
+                    "ResultPath": "$.capacityTimeout"
                   }
-                ],
-                "Default": "WaitForCapacity"
+                ]
               },
-              "WaitForCapacity": {
+              "RetryDeliveryCapacity": {
                 "Type": "Wait",
-                "Seconds": 5,
-                "Next": "CheckDeliveryCapacity"
+                "Seconds": 30,
+                "Next": "WaitDeliveryCapacity"
               },
               "Delivery": {
                 "Type": "Task",
@@ -405,43 +399,45 @@ resources:
                 "Next": "WaitDeliveryConfirmation"
               },
               "WaitDeliveryConfirmation": {
-                "Type": "Wait",
-                "Seconds": 3,
-                "Next": "CheckDeliveryConfirmation"
-              },
-              "CheckDeliveryConfirmation": {
                 "Type": "Task",
-                "Resource": "arn:aws:states:::lambda:invoke",
+                "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
                 "Parameters": {
-                  "FunctionName": "${CheckStageConfirmationLambdaFunction.Arn}",
+                  "FunctionName": "${WaitStageConfirmationLambdaFunction.Arn}",
                   "Payload": {
                     "orderId.$": "$.orderId",
                     "tenantId.$": "$.tenantId",
-                    "expectedStage": "DELIVERY"
+                    "stage": "DELIVERY",
+                    "taskToken.$": "$$.Task.Token"
                   }
                 },
-                "Next": "IsDeliveryConfirmed",
-                "ResultPath": "$.deliveryConfirmation"
-              },
-              "IsDeliveryConfirmed": {
-                "Type": "Choice",
-                "Choices": [
-                  {
-                    "Variable": "$.deliveryConfirmation.Payload.confirmed",
-                    "BooleanEquals": true,
-                    "Next": "Delivered"
-                  }
-                ],
-                "Default": "WaitDeliveryConfirmation"
+                "TimeoutSeconds": 86400,
+                "HeartbeatSeconds": 300,
+                "Next": "Delivered"
               },
               "Delivered": {
                 "Type": "Task",
                 "Resource": "${DeliveredStageLambdaFunction.Arn}",
                 "TimeoutSeconds": 300,
                 "End": true
+              },
+              "HandleCookingError": {
+                "Type": "Fail",
+                "Error": "CookingStageFailed",
+                "Cause": "Error en la etapa de cocina"
+              },
+              "HandleConfirmationTimeout": {
+                "Type": "Fail",
+                "Error": "ConfirmationTimeout",
+                "Cause": "Tiempo de espera agotado para confirmación"
+              },
+              "HandleConfirmationFailure": {
+                "Type": "Fail",
+                "Error": "ConfirmationFailed",
+                "Cause": "Fallo en la confirmación"
               }
             }
           }
+
 
 
 
