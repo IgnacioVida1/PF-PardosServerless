@@ -25,9 +25,9 @@ provider:
 
 functions:
   cleanupExpiredTokens:
-  handler: Lambdas/cleanup/handler.cleanup_expired_tokens
-  events:
-    - schedule: rate(5 minutes)
+    handler: Lambdas/cleanup/handler.cleanup_expired_tokens
+    events:
+      - schedule: rate(5 minutes)
   # Auth functions (existentes)
   register:
     handler: Lambdas/auth_service/handler.register
@@ -444,6 +444,7 @@ resources:
               }
             }
           }
+
 
 
 
